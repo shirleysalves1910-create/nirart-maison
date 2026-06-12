@@ -1,0 +1,240 @@
+export const MOCK_SCHOOLS = [
+  { id: 1, fantasyName: 'Escola Estadual Professora Maria Silva' },
+  { id: 2, fantasyName: 'Colégio Particular São João' },
+  { id: 3, fantasyName: 'E.E. Instituto Educacional' },
+  { id: 4, fantasyName: 'Escola Municipal Das Flores' },
+  { id: 5, fantasyName: 'Colégio e Curso Visão' },
+  { id: 6, fantasyName: 'Escola Técnica Profissional' }
+]
+
+export const MOCK_CLASSES = [
+  { id: 1, schoolId: 1, name: '6º Ano A' },
+  { id: 2, schoolId: 1, name: '6º Ano B' },
+  { id: 3, schoolId: 2, name: '3º Ano - Formatura' },
+  { id: 4, schoolId: 2, name: '2º Ano A' },
+  { id: 5, schoolId: 3, name: '8º Ano - Técnico em Informática' },
+  { id: 6, schoolId: 4, name: 'Turma de Encerramento' }
+]
+
+export const MOCK_STUDENTS = [
+  {
+    id: 1,
+    schoolId: 1,
+    classId: 1,
+    fullName: 'Ana Beatriz Souza',
+    sex: 'F',
+    birthDate: '2012-04-12',
+    phone: '(11) 99999-1111',
+    address: 'Rua das Acácias, 123, Centro',
+    guardianName: 'Mariana Souza',
+    guardianPhone: '(11) 98888-2222',
+    notes: 'Alergia a amendoim',
+    status: 'Ativo',
+    measuresCount: 3,
+    reservationsCount: 2,
+    balanceDue: 580,
+    lastReservation: '10/06/2024',
+    nextTest: '15/06/2024',
+    lastMeasurement: '01/06/2024'
+  },
+  {
+    id: 2,
+    schoolId: 1,
+    classId: 2,
+    fullName: 'Bruno Lima',
+    sex: 'M',
+    birthDate: '2011-09-20',
+    phone: '(11) 99999-3333',
+    address: 'Av. Brasil, 45, Bairro Jardim',
+    guardianName: 'Paula Lima',
+    guardianPhone: '(11) 98888-4444',
+    notes: '',
+    status: 'Ativo',
+    measuresCount: 2,
+    reservationsCount: 1,
+    balanceDue: 0,
+    lastReservation: '08/06/2024',
+    nextTest: '20/06/2024',
+    lastMeasurement: '22/05/2024'
+  },
+  {
+    id: 3,
+    schoolId: 2,
+    classId: 3,
+    fullName: 'Carla Nunes',
+    sex: 'F',
+    birthDate: '2012-01-10',
+    phone: '(21) 99999-5555',
+    address: 'Rua das Flores, 88',
+    guardianName: 'João Nunes',
+    guardianPhone: '(21) 98888-6666',
+    notes: 'Responsável por coletar documentos',
+    status: 'Ativo',
+    measuresCount: 4,
+    reservationsCount: 3,
+    balanceDue: 220,
+    lastReservation: '12/06/2024',
+    nextTest: '18/06/2024',
+    lastMeasurement: '28/05/2024'
+  }
+]
+
+export const MOCK_MEASUREMENTS = [
+  {
+    id: 1,
+    studentId: 1,
+    type: 'female',
+    date: '01/06/2024',
+    user: 'Julia Santos',
+    status: 'Ativa',
+    altura: '1,62m',
+    busto: '88cm',
+    abaixoBusto: '74cm',
+    cintura: '67cm',
+    quadril: '96cm',
+    comprimento: '125cm',
+    shoeSize: '36',
+    notes: 'Ajustar comprimento em barras',
+    changes: 'Primeira medição registrada'
+  },
+  {
+    id: 4,
+    studentId: 1,
+    type: 'female',
+    date: '25/05/2024',
+    user: 'Julia Santos',
+    status: 'Anterior',
+    altura: '1,61m',
+    busto: '86cm',
+    abaixoBusto: '72cm',
+    cintura: '65cm',
+    quadril: '94cm',
+    comprimento: '123cm',
+    shoeSize: '36',
+    notes: 'Medição anterior',
+    changes: 'Medição anterior - Altura aumentou 1cm'
+  },
+  {
+    id: 2,
+    studentId: 2,
+    type: 'male',
+    date: '22/05/2024',
+    user: 'Pedro Souza',
+    status: 'Ativa',
+    altura: '1,72m',
+    suitSize: '48',
+    sleeve: '62cm',
+    shirtSize: 'M',
+    pantsSize: '42',
+    waist: '82cm',
+    pantsLength: '102cm',
+    shoeSize: '40',
+    notes: 'Calça um pouco larga',
+    changes: 'Atualizada medição masculina'
+  },
+  {
+    id: 5,
+    studentId: 2,
+    type: 'male',
+    date: '10/05/2024',
+    user: 'Pedro Souza',
+    status: 'Anterior',
+    altura: '1,70m',
+    suitSize: '48',
+    sleeve: '61cm',
+    shirtSize: 'M',
+    pantsSize: '42',
+    waist: '80cm',
+    pantsLength: '100cm',
+    shoeSize: '40',
+    notes: 'Primeira medição',
+    changes: 'Primeira medição - Ajustados mangas'
+  },
+  {
+    id: 3,
+    studentId: 3,
+    type: 'female',
+    date: '28/05/2024',
+    user: 'Marina Alves',
+    status: 'Ativa',
+    altura: '1,68m',
+    busto: '90cm',
+    abaixoBusto: '76cm',
+    cintura: '68cm',
+    quadril: '98cm',
+    comprimento: '128cm',
+    shoeSize: '37',
+    notes: 'Deslocamento de busto para frente',
+    changes: 'Corrigida altura e quadril'
+  },
+  {
+    id: 6,
+    studentId: 3,
+    type: 'female',
+    date: '15/05/2024',
+    user: 'Marina Alves',
+    status: 'Anterior',
+    altura: '1,67m',
+    busto: '88cm',
+    abaixoBusto: '74cm',
+    cintura: '66cm',
+    quadril: '96cm',
+    comprimento: '126cm',
+    shoeSize: '37',
+    notes: 'Medição anterior',
+    changes: 'Medição anterior - Ajuste geral'
+  }
+]
+
+export const MOCK_ADJUSTMENTS = [
+  {
+    id: 1,
+    studentId: 1,
+    piece: 'Vestido de Formatura',
+    adjustmentType: 'Comprimento',
+    description: 'Encurtar 3cm nas laterais',
+    responsible: 'Maria Costa',
+    date: '02/06/2024',
+    notes: 'Cliente solicitou ajuste de altura'
+  },
+  {
+    id: 2,
+    studentId: 1,
+    piece: 'Vestido de Formatura',
+    adjustmentType: 'Cintura',
+    description: 'Ajustar cintura para ficarem mais justo',
+    responsible: 'Maria Costa',
+    date: '30/05/2024',
+    notes: 'Ajuste na cintura conforme medições'
+  },
+  {
+    id: 3,
+    studentId: 2,
+    piece: 'Terno Completo',
+    adjustmentType: 'Manga',
+    description: 'Aumentar 2cm nas mangas',
+    responsible: 'João Silva',
+    date: '23/05/2024',
+    notes: 'Ajuste de comprimento nas mangas'
+  },
+  {
+    id: 4,
+    studentId: 2,
+    piece: 'Calça',
+    adjustmentType: 'Comprimento',
+    description: 'Dobrar barra para 100cm',
+    responsible: 'João Silva',
+    date: '22/05/2024',
+    notes: 'Seguindo medição - comprimento da calça'
+  },
+  {
+    id: 5,
+    studentId: 3,
+    piece: 'Vestido de Debutante',
+    adjustmentType: 'Busto',
+    description: 'Aumentar 2cm no busto',
+    responsible: 'Ana Martins',
+    date: '29/05/2024',
+    notes: 'Deslocamento frontal ajustado'
+  }
+]
