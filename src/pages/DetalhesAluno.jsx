@@ -1,8 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { Ruler, CalendarCheck, CreditCard, Clock } from 'lucide-react'
+import { Ruler, CalendarCheck, Clock, Plus } from 'lucide-react'
 import { MOCK_STUDENTS, MOCK_SCHOOLS, MOCK_CLASSES } from '../data/mockData'
+import {
+  getReservationItem,
+  getReservationTotal,
+  MOCK_RESERVATIONS
+} from '../data/reservationMockData'
 
 export default function DetalhesAluno() {
   const { id } = useParams()
@@ -10,6 +15,7 @@ export default function DetalhesAluno() {
   const student = MOCK_STUDENTS.find((item) => String(item.id) === String(id))
   const school = MOCK_SCHOOLS.find((item) => item.id === student?.schoolId)
   const studentClass = MOCK_CLASSES.find((item) => item.id === student?.classId)
+  const studentReservations = MOCK_RESERVATIONS.filter((item) => String(item.studentId) === String(id))
 
   if (!student) {
     return (
@@ -52,6 +58,9 @@ export default function DetalhesAluno() {
 
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => navigate('/alunos')}>Voltar</Button>
+            <Button variant="outline" onClick={() => navigate(`/cadastro-reserva?alunoId=${id}`)} className="inline-flex items-center gap-2">
+              <Plus size={17} /> Nova Reserva
+            </Button>
             <Button variant="primary" onClick={() => navigate(`/cadastro-aluno/${id}`)}>Editar</Button>
           </div>
         </div>
@@ -67,7 +76,7 @@ export default function DetalhesAluno() {
           <ClickableCard label="Medidas" value={`${student.measuresCount} registros`} icon={<Ruler size={20} />} onClick={() => navigate(student.sex === 'F' ? `/medidas-femininas/${id}` : `/medidas-masculinas/${id}`)} />
           <ClickableCard label="Nova Medição" value="Registrar nova leitura" icon={<Ruler size={20} />} onClick={() => navigate(student.sex === 'F' ? `/medidas-femininas/${id}` : `/medidas-masculinas/${id}`)} />
           <ClickableCard label="Histórico de Medições" value="Ver histórico completo" icon={<Clock size={20} />} onClick={() => navigate(`/historico-medidas/${id}`)} />
-          <ClickableCard label="Reservas" value={`${student.reservationsCount} realizadas`} icon={<CalendarCheck size={20} />} onClick={() => navigate('/reservas')} />
+          <ClickableCard label="Reservas do aluno" value={`${studentReservations.length} registros`} icon={<CalendarCheck size={20} />} onClick={() => navigate(`/reservas?alunoId=${id}`)} />
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -98,6 +107,45 @@ export default function DetalhesAluno() {
             </div>
           </section>
         </div>
+
+        <section className="rounded-lg border border-gray-200 bg-white p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-nirart-text">Reservas do aluno</h2>
+              <p className="mt-1 text-sm text-gray-500">Histórico e próximas reservas vinculadas a este cadastro.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigate(`/reservas?alunoId=${id}`)}>Ver todas</Button>
+          </div>
+
+          {studentReservations.length === 0 ? (
+            <div className="mt-5 rounded-lg bg-gray-50 p-6 text-center text-sm text-gray-500">
+              Nenhuma reserva cadastrada para este aluno.
+            </div>
+          ) : (
+            <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {studentReservations.map((reservation) => (
+                <button
+                  key={reservation.id}
+                  type="button"
+                  onClick={() => navigate(`/reservas/${reservation.id}`)}
+                  className="rounded-lg border border-gray-200 p-4 text-left transition hover:border-nirart-green hover:bg-gray-50"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-nirart-text">Evento em {formatDate(reservation.eventDate)}</p>
+                      <p className="mt-1 text-sm text-gray-500">{summarizeReservationItems(reservation)}</p>
+                    </div>
+                    <ReservationStatus status={reservation.status} />
+                  </div>
+                  <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-sm">
+                    <span className="text-gray-500">Valor total</span>
+                    <span className="font-bold text-nirart-text">{formatCurrency(getReservationTotal(reservation))}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </MainLayout>
   )
@@ -140,4 +188,35 @@ function InfoRow({ label, value, className = '' }) {
       <p className="font-semibold text-nirart-text">{value || '—'}</p>
     </div>
   )
+}
+
+function ReservationStatus({ status }) {
+  const styles = {
+    'pré-reserva': 'bg-purple-100 text-purple-800',
+    reservado: 'bg-yellow-100 text-yellow-800',
+    confirmado: 'bg-green-100 text-green-800',
+    entregue: 'bg-blue-100 text-blue-800',
+    devolvido: 'bg-gray-100 text-gray-700',
+    cancelado: 'bg-red-100 text-red-800'
+  }
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${styles[status]}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  )
+}
+
+function summarizeReservationItems(reservation) {
+  return reservation.items.map((entry) => {
+    const item = getReservationItem(entry.inventoryId)
+    return `${entry.quantity}x ${item?.description || item?.name}`
+  }).join(', ')
+}
+
+function formatDate(value) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR')
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
 }

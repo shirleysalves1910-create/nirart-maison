@@ -1,4 +1,4 @@
-export const INVENTORY_STATUS = ['Disponivel', 'Reservado', 'Manutencao', 'Inativo']
+export const INVENTORY_STATUS = ['Disponível', 'Reservado', 'Locado', 'Inativo']
 
 export const MOCK_CLOTHES = [
   {
@@ -15,11 +15,10 @@ export const MOCK_CLOTHES = [
     rentalValue: 280,
     acquisitionCost: 950,
     supplier: 'Maison Elegance',
-    status: 'Disponivel',
+    status: 'Disponível',
     notes: 'Modelo com ajuste de cintura.',
-    availableQuantity: 5,
     reservedQuantity: 2,
-    maintenanceQuantity: 1
+    rentedQuantity: 1
   },
   {
     id: 2,
@@ -37,9 +36,8 @@ export const MOCK_CLOTHES = [
     supplier: 'Alfaiataria Central',
     status: 'Reservado',
     notes: 'Acompanha paleto e calca.',
-    availableQuantity: 2,
     reservedQuantity: 4,
-    maintenanceQuantity: 0
+    rentedQuantity: 0
   },
   {
     id: 3,
@@ -55,11 +53,10 @@ export const MOCK_CLOTHES = [
     rentalValue: 190,
     acquisitionCost: 620,
     supplier: 'Encanto Kids',
-    status: 'Manutencao',
-    notes: 'Uma unidade aguardando reparo no bordado.',
-    availableQuantity: 3,
+    status: 'Locado',
+    notes: 'Uma unidade locada para evento escolar.',
     reservedQuantity: 0,
-    maintenanceQuantity: 1
+    rentedQuantity: 1
   }
 ]
 
@@ -77,11 +74,10 @@ export const MOCK_SHOES = [
     brand: 'Belle',
     totalQuantity: 5,
     rentalValue: 90,
-    status: 'Disponivel',
+    status: 'Disponível',
     notes: 'Salto de 7 cm.',
-    availableQuantity: 4,
     reservedQuantity: 1,
-    maintenanceQuantity: 0
+    rentedQuantity: 0
   },
   {
     id: 102,
@@ -98,9 +94,8 @@ export const MOCK_SHOES = [
     rentalValue: 110,
     status: 'Reservado',
     notes: 'Couro sintetico.',
-    availableQuantity: 2,
     reservedQuantity: 5,
-    maintenanceQuantity: 0
+    rentedQuantity: 0
   }
 ]
 
@@ -117,11 +112,10 @@ export const MOCK_ACCESSORIES = [
     size: 'Unico',
     totalQuantity: 10,
     rentalValue: 55,
-    status: 'Disponivel',
+    status: 'Disponível',
     notes: 'Guardar em embalagem individual.',
-    availableQuantity: 8,
     reservedQuantity: 2,
-    maintenanceQuantity: 0
+    rentedQuantity: 0
   },
   {
     id: 202,
@@ -135,11 +129,10 @@ export const MOCK_ACCESSORIES = [
     size: 'Unico',
     totalQuantity: 12,
     rentalValue: 35,
-    status: 'Manutencao',
-    notes: 'Duas unidades em higienizacao.',
-    availableQuantity: 7,
+    status: 'Locado',
+    notes: 'Duas unidades locadas.',
     reservedQuantity: 3,
-    maintenanceQuantity: 2
+    rentedQuantity: 2
   }
 ]
 
@@ -155,12 +148,11 @@ export const MOCK_KITS = [
     size: 'Variado',
     items: ['ROP-002 - Terno slim completo', 'SAP-002 - Sapato social masculino', 'ACE-002 - Gravata slim'],
     totalValue: 420,
-    status: 'Disponivel',
+    status: 'Disponível',
     notes: 'Confirmar numeracao do sapato antes da reserva.',
     totalQuantity: 3,
-    availableQuantity: 2,
     reservedQuantity: 1,
-    maintenanceQuantity: 0
+    rentedQuantity: 0
   },
   {
     id: 302,
@@ -176,18 +168,17 @@ export const MOCK_KITS = [
     status: 'Reservado',
     notes: 'Kit montado para evento de junho.',
     totalQuantity: 2,
-    availableQuantity: 0,
     reservedQuantity: 2,
-    maintenanceQuantity: 0
+    rentedQuantity: 0
   }
 ]
 
 export const MOCK_INVENTORY_HISTORY = [
   { id: 1, itemRef: 'ROP-001', date: '10/06/2026', action: 'Reserva', user: 'Marina Alves', details: 'Duas unidades reservadas.' },
-  { id: 2, itemRef: 'ROP-001', date: '08/06/2026', action: 'Manutencao', user: 'Julia Santos', details: 'Ajuste de barra em uma unidade.' },
+  { id: 2, itemRef: 'ROP-001', date: '08/06/2026', action: 'Locação', user: 'Julia Santos', details: 'Uma unidade entregue ao cliente.' },
   { id: 3, itemRef: 'ROP-002', date: '11/06/2026', action: 'Reserva', user: 'Pedro Souza', details: 'Quatro unidades vinculadas a turma.' },
   { id: 4, itemRef: 'SAP-001', date: '09/06/2026', action: 'Devolucao', user: 'Marina Alves', details: 'Item devolvido e liberado.' },
-  { id: 5, itemRef: 'ACE-002', date: '12/06/2026', action: 'Manutencao', user: 'Julia Santos', details: 'Duas unidades enviadas para higienizacao.' }
+  { id: 5, itemRef: 'ACE-002', date: '12/06/2026', action: 'Locação', user: 'Julia Santos', details: 'Duas unidades entregues ao cliente.' }
 ]
 
 export const MOCK_INVENTORY_ITEMS = [

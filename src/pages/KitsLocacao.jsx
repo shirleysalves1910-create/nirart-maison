@@ -24,7 +24,7 @@ export default function KitsLocacao() {
     description: '',
     items: [],
     totalValue: '',
-    status: 'Disponivel',
+    status: 'Disponível',
     notes: ''
   })
 

@@ -13,7 +13,7 @@ const baseFields = {
   size: '',
   totalQuantity: '',
   rentalValue: '',
-  status: 'Disponivel',
+  status: 'Disponível',
   notes: ''
 }
 
@@ -202,6 +202,5 @@ function Field({
 }
 
 function formatStatus(status) {
-  if (status === 'Manutencao') return 'Manutencao'
   return status
 }

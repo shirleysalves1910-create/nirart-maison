@@ -21,10 +21,24 @@ import CadastroSapato from './pages/CadastroSapato'
 import CadastroAcessorio from './pages/CadastroAcessorio'
 import KitsLocacao from './pages/KitsLocacao'
 import Reservas from './pages/Reservas'
+import CadastroReserva from './pages/CadastroReserva'
+import DetalhesReserva from './pages/DetalhesReserva'
+import Entregas from './pages/Entregas'
+import RegistrarEntrega from './pages/RegistrarEntrega'
+import Devolucoes from './pages/Devolucoes'
+import RegistrarDevolucao from './pages/RegistrarDevolucao'
 import Pagamentos from './pages/Pagamentos'
+import CadastroPagamento from './pages/CadastroPagamento'
+import DetalhesPagamento from './pages/DetalhesPagamento'
+import BaixaParcela from './pages/BaixaParcela'
 import Agenda from './pages/Agenda'
+import CadastroEvento from './pages/CadastroEvento'
+import DetalhesEvento from './pages/DetalhesEvento'
 import Relatorios from './pages/Relatorios'
+import DashboardFinanceiro from './pages/DashboardFinanceiro'
 import Configuracoes from './pages/Configuracoes'
+import Usuarios from './pages/Usuarios'
+import CadastroUsuario from './pages/CadastroUsuario'
 
 function App() {
   return (
@@ -57,10 +71,30 @@ function App() {
         <Route path="/kits-locacao" element={<KitsLocacao />} />
         <Route path="/kits-locacao/:id" element={<KitsLocacao />} />
         <Route path="/reservas" element={<Reservas />} />
+        <Route path="/reservas/:id" element={<DetalhesReserva />} />
+        <Route path="/cadastro-reserva" element={<CadastroReserva />} />
+        <Route path="/cadastro-reserva/:id" element={<CadastroReserva />} />
+        <Route path="/entregas" element={<Entregas />} />
+        <Route path="/registrar-entrega" element={<RegistrarEntrega />} />
+        <Route path="/registrar-entrega/:reservaId" element={<RegistrarEntrega />} />
+        <Route path="/devolucoes" element={<Devolucoes />} />
+        <Route path="/registrar-devolucao" element={<RegistrarDevolucao />} />
+        <Route path="/registrar-devolucao/:reservaId" element={<RegistrarDevolucao />} />
         <Route path="/pagamentos" element={<Pagamentos />} />
+        <Route path="/cadastro-pagamento" element={<CadastroPagamento />} />
+        <Route path="/cadastro-pagamento/:id" element={<CadastroPagamento />} />
+        <Route path="/pagamentos/:id" element={<DetalhesPagamento />} />
+        <Route path="/pagamentos/:id/baixa/:parcelaId" element={<BaixaParcela />} />
         <Route path="/agenda" element={<Agenda />} />
+        <Route path="/agenda/:id" element={<DetalhesEvento />} />
+        <Route path="/cadastro-evento" element={<CadastroEvento />} />
+        <Route path="/cadastro-evento/:id" element={<CadastroEvento />} />
         <Route path="/relatorios" element={<Relatorios />} />
+        <Route path="/dashboard-financeiro" element={<DashboardFinanceiro />} />
         <Route path="/configuracoes" element={<Configuracoes />} />
+        <Route path="/usuarios" element={<Usuarios />} />
+        <Route path="/cadastro-usuario" element={<CadastroUsuario />} />
+        <Route path="/cadastro-usuario/:id" element={<CadastroUsuario />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>

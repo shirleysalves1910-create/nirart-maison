@@ -48,7 +48,7 @@ export default function Alunos() {
         }
         break
       case 'reservations':
-        navigate('/reservas')
+        navigate(`/reservas?alunoId=${id}`)
         break
       case 'payments':
         navigate('/pagamentos')
