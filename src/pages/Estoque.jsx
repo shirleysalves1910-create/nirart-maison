@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
@@ -14,16 +14,17 @@ import {
   ShieldCheck,
   Shirt,
   Sparkles,
+  ToggleLeft,
   X
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
 import SearchBar from '../components/SearchBar'
 import {
-  getEditPath,
-  MOCK_INVENTORY_HISTORY,
-  MOCK_INVENTORY_ITEMS
-} from '../data/inventoryMockData'
+  inativarRegistroEstoque,
+  listarEstoque,
+  listarMovimentacoesEstoque
+} from '../services/estoque'
 
 const TYPE_ICONS = {
   Roupa: Shirt,
@@ -32,10 +33,20 @@ const TYPE_ICONS = {
   Kit: Box
 }
 
+const TYPE_FILTER_OPTIONS = [
+  { value: 'Roupa', label: 'Roupa' },
+  { value: 'Sapato', label: 'Sapato' },
+  { value: 'Acessorio', label: 'Acessório' },
+  { value: 'Kit', label: 'Kit' }
+]
+
+const CATEGORY_FILTER_ORDER = ['Feminino', 'Masculino', 'Unissex']
+
 export default function Estoque() {
   const navigate = useNavigate()
-  const [items] = useState(MOCK_INVENTORY_ITEMS)
+  const [items, setItems] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [itemType, setItemType] = useState('')
   const [category, setCategory] = useState('')
   const [color, setColor] = useState('')
   const [size, setSize] = useState('')
@@ -43,13 +54,44 @@ export default function Estoque() {
   const [selectedItem, setSelectedItem] = useState(null)
   const [modalType, setModalType] = useState('')
   const [showCreateMenu, setShowCreateMenu] = useState(false)
+  const [history, setHistory] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [notification, setNotification] = useState('')
 
-  const filteredItems = items.filter((item) => {
+  useEffect(() => {
+    let active = true
+    const loadItems = async () => {
+      setLoading(true)
+      setErrorMessage('')
+      try {
+        const data = await listarEstoque()
+        if (active) setItems(data)
+      } catch (error) {
+        if (active) setErrorMessage(getErrorMessage(error, 'Não foi possível carregar o estoque.'))
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadItems()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const filteredItems = useMemo(() => items.filter((item) => {
     const searchable = [
       item.ref,
       item.description,
       item.name,
+      item.type,
       item.category,
+      item.brand,
+      item.supplier,
+      item.model,
       item.color,
       item.size,
       item.status
@@ -57,34 +99,65 @@ export default function Estoque() {
 
     return (
       searchable.includes(searchTerm.toLowerCase()) &&
-      (!category || item.category === category || item.type === category) &&
+      (!itemType || item.type === itemType) &&
+      (!category || item.category === category) &&
       (!color || item.color === color) &&
       (!size || item.size === size) &&
       (!status || item.status === status)
     )
-  })
+  }), [category, color, itemType, items, searchTerm, size, status])
 
   const metrics = useMemo(() => ({
-    clothes: items.filter((item) => item.type === 'Roupa').length,
-    shoes: items.filter((item) => item.type === 'Sapato').length,
-    accessories: items.filter((item) => item.type === 'Acessorio').length,
-    kits: items.filter((item) => item.type === 'Kit').length,
-    available: items.reduce((total, item) => total + getAvailableQuantity(item), 0),
-    reserved: sum(items, 'reservedQuantity'),
-    rented: sum(items, 'rentedQuantity')
-  }), [items])
+    clothes: sum(filteredItems.filter((item) => item.type === 'Roupa'), 'totalQuantity'),
+    shoes: sum(filteredItems.filter((item) => item.type === 'Sapato'), 'totalQuantity'),
+    accessories: sum(filteredItems.filter((item) => item.type === 'Acessorio'), 'totalQuantity'),
+    kits: sum(filteredItems.filter((item) => item.type === 'Kit'), 'totalQuantity'),
+    available: filteredItems.reduce((total, item) => total + getAvailableQuantity(item), 0),
+    reserved: sum(filteredItems, 'reservedQuantity'),
+    rented: sum(filteredItems, 'rentedQuantity')
+  }), [filteredItems])
 
-  const openModal = (type, item) => {
+  const openModal = async (type, item) => {
     setSelectedItem(item)
     setModalType(type)
+    setHistory([])
+    if (type === 'history') {
+      setHistoryLoading(true)
+      setErrorMessage('')
+      try {
+        setHistory(await listarMovimentacoesEstoque(item))
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error, 'Não foi possível carregar o histórico.'))
+      } finally {
+        setHistoryLoading(false)
+      }
+    }
   }
 
   const closeModal = () => {
     setSelectedItem(null)
     setModalType('')
+    setHistory([])
   }
 
-  const categories = unique(items.flatMap((item) => [item.type, item.category]).filter(Boolean))
+  const handleInactivate = async (item) => {
+    if (item.status === 'Inativo') return
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      const updated = await inativarRegistroEstoque(item)
+      setItems((current) => current.map((entry) => (
+        entry.id === updated.id && entry.type === updated.type ? updated : entry
+      )))
+      setNotification(`${item.ref} foi inativado.`)
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível inativar o item.'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const categories = orderedCategories(items.map((item) => item.category).filter(Boolean))
   const colors = unique(items.map((item) => item.color).filter(Boolean))
   const sizes = unique(items.map((item) => item.size).filter(Boolean))
 
@@ -115,6 +188,20 @@ export default function Estoque() {
           </div>
         </header>
 
+        {notification && (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+            <span>{notification}</span>
+            <button type="button" onClick={() => setNotification('')} className="font-bold" aria-label="Fechar aviso">×</button>
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <MetricCard label="Roupas" value={metrics.clothes} icon={Shirt} color="green" />
           <MetricCard label="Sapatos" value={metrics.shoes} icon={PackageOpen} color="wine" />
@@ -130,7 +217,8 @@ export default function Estoque() {
             onSearch={setSearchTerm}
             placeholder="Buscar por REF, descrição, categoria, cor, tamanho ou status..."
           />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Filter value={itemType} onChange={setItemType} label="Todos os tipos" options={TYPE_FILTER_OPTIONS} />
             <Filter value={category} onChange={setCategory} label="Todas as categorias" options={categories} />
             <Filter value={color} onChange={setColor} label="Todas as cores" options={colors} />
             <Filter value={size} onChange={setSize} label="Todos os tamanhos" options={sizes} />
@@ -139,7 +227,11 @@ export default function Estoque() {
         </section>
 
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          {filteredItems.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 p-12 text-sm text-gray-500">
+              <Clock3 className="animate-spin" size={20} /> Carregando estoque...
+            </div>
+          ) : filteredItems.length === 0 ? (
             <div className="p-12 text-center">
               <AlertCircle className="mx-auto mb-4 text-gray-400" size={46} />
               <p className="font-medium text-gray-700">Nenhum item encontrado</p>
@@ -153,6 +245,8 @@ export default function Estoque() {
                 onEdit={(item) => navigate(getEditPath(item))}
                 onHistory={(item) => openModal('history', item)}
                 onAvailability={(item) => openModal('availability', item)}
+                onInactivate={handleInactivate}
+                actionLoading={actionLoading}
               />
               <MobileCards
                 items={filteredItems}
@@ -160,6 +254,8 @@ export default function Estoque() {
                 onEdit={(item) => navigate(getEditPath(item))}
                 onHistory={(item) => openModal('history', item)}
                 onAvailability={(item) => openModal('availability', item)}
+                onInactivate={handleInactivate}
+                actionLoading={actionLoading}
               />
             </>
           )}
@@ -170,6 +266,8 @@ export default function Estoque() {
         <InventoryModal
           type={modalType}
           item={selectedItem}
+          history={history}
+          historyLoading={historyLoading}
           onClose={closeModal}
         />
       )}
@@ -177,7 +275,7 @@ export default function Estoque() {
   )
 }
 
-function DesktopTable({ items, onView, onEdit, onHistory, onAvailability }) {
+function DesktopTable({ items, onView, onEdit, onHistory, onAvailability, onInactivate, actionLoading }) {
   return (
     <div className="hidden xl:block">
       <table className="w-full table-fixed text-left">
@@ -211,6 +309,12 @@ function DesktopTable({ items, onView, onEdit, onHistory, onAvailability }) {
                         <span><strong className="font-semibold text-gray-600">Categoria:</strong> {item.category || item.type}</span>
                         <span><strong className="font-semibold text-gray-600">Cor:</strong> {item.color || '-'}</span>
                         <span><strong className="font-semibold text-gray-600">Tamanho:</strong> {item.size || '-'}</span>
+                        {getCommercialInfo(item) && (
+                          <span>
+                            <strong className="font-semibold text-gray-600">{getCommercialInfo(item).label}:</strong>{' '}
+                            {getCommercialInfo(item).value}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -235,6 +339,8 @@ function DesktopTable({ items, onView, onEdit, onHistory, onAvailability }) {
                     onEdit={onEdit}
                     onHistory={onHistory}
                     onAvailability={onAvailability}
+                    onInactivate={onInactivate}
+                    actionLoading={actionLoading}
                   />
                 </td>
               </tr>
@@ -263,6 +369,9 @@ function MobileCards({ items, ...actions }) {
             <SmallInfo label="Categoria" value={item.category || item.type} />
             <SmallInfo label="Cor" value={item.color || '-'} />
             <SmallInfo label="Tamanho" value={item.size || '-'} />
+            {getCommercialInfo(item) && (
+              <SmallInfo label={getCommercialInfo(item).label} value={getCommercialInfo(item).value} />
+            )}
             <SmallInfo label="Locação" value={formatCurrency(item.rentalValue ?? item.totalValue)} />
             <SmallInfo label="Total" value={item.totalQuantity} />
             <SmallInfo label="Disponíveis" value={getAvailableQuantity(item)} valueClassName="text-green-700" />
@@ -278,12 +387,13 @@ function MobileCards({ items, ...actions }) {
   )
 }
 
-function ActionList({ item, onView, onEdit, onHistory, onAvailability }) {
+function ActionList({ item, onView, onEdit, onHistory, onAvailability, onInactivate, actionLoading }) {
   const actions = [
     { label: 'Visualizar', icon: Eye, onClick: onView },
     { label: 'Editar', icon: Edit2, onClick: onEdit },
     { label: 'Histórico', icon: History, onClick: onHistory },
-    { label: 'Ver disponibilidade', icon: ShieldCheck, onClick: onAvailability }
+    { label: 'Ver disponibilidade', icon: ShieldCheck, onClick: onAvailability },
+    { label: 'Inativar', icon: ToggleLeft, onClick: onInactivate, disabled: item.status === 'Inativo' || actionLoading }
   ]
 
   return (
@@ -294,7 +404,8 @@ function ActionList({ item, onView, onEdit, onHistory, onAvailability }) {
           type="button"
           title={action.label}
           onClick={() => action.onClick(item)}
-          className="inline-flex min-w-[112px] items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-[11px] font-medium text-gray-700 hover:border-nirart-green hover:text-nirart-green xl:min-w-[120px]"
+          disabled={action.disabled}
+          className="inline-flex min-w-0 w-full items-center justify-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-[11px] font-medium text-gray-700 hover:border-nirart-green hover:text-nirart-green disabled:cursor-not-allowed disabled:opacity-40 xl:min-w-[120px]"
         >
           <action.icon className="shrink-0" size={15} />
           <span className="whitespace-nowrap text-center">{action.label}</span>
@@ -304,8 +415,7 @@ function ActionList({ item, onView, onEdit, onHistory, onAvailability }) {
   )
 }
 
-function InventoryModal({ type, item, onClose }) {
-  const history = MOCK_INVENTORY_HISTORY.filter((entry) => entry.itemRef === item.ref)
+function InventoryModal({ type, item, history, historyLoading, onClose }) {
   const titles = {
     view: 'Detalhes do Item',
     history: 'Histórico do Item',
@@ -328,7 +438,7 @@ function InventoryModal({ type, item, onClose }) {
         <div className="space-y-5 p-6">
           {type === 'view' && <ItemDetails item={item} />}
           {type === 'availability' && <Availability item={item} />}
-          {type === 'history' && <ItemHistory history={history} />}
+          {type === 'history' && <ItemHistory history={history} loading={historyLoading} />}
         </div>
       </div>
     </div>
@@ -336,6 +446,7 @@ function InventoryModal({ type, item, onClose }) {
 }
 
 function ItemDetails({ item }) {
+  const commercialInfo = getCommercialInfo(item)
   const details = [
     ['Tipo', item.type],
     ['Categoria', item.category || '-'],
@@ -344,8 +455,8 @@ function ItemDetails({ item }) {
     ['Quantidade total', item.totalQuantity],
     ['Valor de locação', formatCurrency(item.rentalValue ?? item.totalValue)],
     ['Status', item.status],
-    ['Fornecedor', item.supplier || '-'],
-    ['Marca / Modelo', item.brand || item.model || '-']
+    ...(commercialInfo ? [[commercialInfo.label, commercialInfo.value]] : []),
+    ...(item.type === 'Acessorio' && item.model ? [['Modelo', item.model]] : [])
   ]
 
   return (
@@ -392,7 +503,10 @@ function Availability({ item }) {
   )
 }
 
-function ItemHistory({ history }) {
+function ItemHistory({ history, loading }) {
+  if (loading) {
+    return <p className="rounded-lg bg-gray-50 p-6 text-center text-gray-600">Carregando movimentações...</p>
+  }
   if (history.length === 0) {
     return <p className="rounded-lg bg-gray-50 p-6 text-center text-gray-600">Nenhuma movimentação registrada.</p>
   }
@@ -404,9 +518,9 @@ function ItemHistory({ history }) {
             <div>
               <p className="font-semibold text-nirart-text">{entry.action}</p>
               <p className="mt-1 text-sm text-gray-600">{entry.details}</p>
-              <p className="mt-2 text-xs text-gray-500">Responsável: {entry.user}</p>
+              <p className="mt-2 text-xs text-gray-500">Quantidade: {entry.quantity}</p>
             </div>
-            <span className="text-xs font-medium text-gray-500">{entry.date}</span>
+            <span className="text-xs font-medium text-gray-500">{formatDateTime(entry.createdAt)}</span>
           </div>
         </div>
       ))}
@@ -439,7 +553,11 @@ function Filter({ value, onChange, label, options }) {
       className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-nirart-green focus:ring-1 focus:ring-nirart-green"
     >
       <option value="">{label}</option>
-      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      {options.map((option) => {
+        const value = typeof option === 'string' ? option : option.value
+        const optionLabel = typeof option === 'string' ? option : option.label
+        return <option key={value} value={value}>{optionLabel}</option>
+      })}
     </select>
   )
 }
@@ -475,6 +593,20 @@ function unique(values) {
   return [...new Set(values)].sort()
 }
 
+function orderedCategories(values) {
+  const categories = unique([...CATEGORY_FILTER_ORDER, ...values])
+  return categories.sort((first, second) => {
+    const firstIndex = CATEGORY_FILTER_ORDER.indexOf(first)
+    const secondIndex = CATEGORY_FILTER_ORDER.indexOf(second)
+    if (firstIndex !== -1 || secondIndex !== -1) {
+      if (firstIndex === -1) return 1
+      if (secondIndex === -1) return -1
+      return firstIndex - secondIndex
+    }
+    return first.localeCompare(second, 'pt-BR')
+  })
+}
+
 function sum(items, field) {
   return items.reduce((total, item) => total + Number(item[field] || 0), 0)
 }
@@ -485,6 +617,41 @@ function getAvailableQuantity(item) {
     - Number(item.rentedQuantity || 0)
 }
 
+function getCommercialInfo(item) {
+  if (item.type === 'Sapato') {
+    return { label: 'Marca', value: item.brand || '-' }
+  }
+  if (item.type === 'Roupa' || item.type === 'Acessorio') {
+    return item.supplier ? { label: 'Fornecedor', value: item.supplier } : null
+  }
+  return null
+}
+
 function formatCurrency(value) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+  const numericValue = Number(value ?? 0)
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number.isFinite(numericValue) ? numericValue : 0)
+}
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(new Date(value))
+}
+
+function getEditPath(item) {
+  if (item.type === 'Roupa') return `/cadastro-roupa/${item.id}`
+  if (item.type === 'Sapato') return `/cadastro-sapato/${item.id}`
+  if (item.type === 'Acessorio') return `/cadastro-acessorio/${item.id}`
+  return `/kits-locacao/${item.id}`
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }

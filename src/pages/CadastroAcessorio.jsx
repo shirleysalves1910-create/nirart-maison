@@ -2,14 +2,28 @@ import InventoryItemForm from '../components/InventoryItemForm'
 
 const config = {
   itemType: 'Acessorio',
-  title: 'Acessorio',
-  subtitle: 'Cadastre modelo, caracteristicas e quantidade do acessorio.',
+  title: 'Acessório',
+  subtitle: 'Cadastre modelo, características e quantidade do acessório.',
   initialFields: {
-    model: ''
+    category: 'Unissex',
+    model: '',
+    supplier: ''
   },
-  requiredFields: ['model'],
+  requiredFields: ['description', 'category', 'model'],
   fields: [
-    { label: 'Modelo', name: 'model', className: 'md:col-span-2' }
+    { label: 'Descrição', name: 'description', className: 'md:col-span-2' },
+    {
+      label: 'Tipo',
+      name: 'category',
+      type: 'select',
+      options: [
+        { value: 'Feminino', label: 'Feminino' },
+        { value: 'Masculino', label: 'Masculino' },
+        { value: 'Unissex', label: 'Unissex' }
+      ]
+    },
+    { label: 'Modelo', name: 'model' },
+    { label: 'Fornecedor', name: 'supplier' }
   ]
 }
 
