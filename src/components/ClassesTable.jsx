@@ -1,5 +1,6 @@
 import { Edit2, Trash2, Eye, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { formatDateBR } from '../utils/date'
 
 export default function ClassesTable({ classes, schools, onEdit, onDelete, onView }) {
   const [expandedRow, setExpandedRow] = useState(null)
@@ -40,7 +41,7 @@ export default function ClassesTable({ classes, schools, onEdit, onDelete, onVie
               <td className="px-6 py-4 text-sm text-gray-700">{getTurnLabel(cls.turn)}</td>
               <td className="px-6 py-4 text-sm font-semibold text-nirart-text">{cls.students}</td>
               <td className="px-6 py-4 text-sm text-gray-700">
-                {new Date(cls.eventDate).toLocaleDateString('pt-BR')}
+                {formatDateBR(cls.eventDate)}
               </td>
               <td className="px-6 py-4 text-sm">
                 <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
@@ -120,7 +121,7 @@ export default function ClassesTable({ classes, schools, onEdit, onDelete, onVie
                 <div className="col-span-2">
                   <p className="text-gray-600 text-xs">Data da Festa</p>
                   <p className="font-semibold text-nirart-text">
-                    {new Date(cls.eventDate).toLocaleDateString('pt-BR')}
+                    {formatDateBR(cls.eventDate)}
                   </p>
                 </div>
               </div>

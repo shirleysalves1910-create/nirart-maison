@@ -1,5 +1,6 @@
 import { X, Users, Ruler, Calendar, MapPin, FileText, Badge } from 'lucide-react'
 import Button from './Button'
+import { formatDateBR, getDaysFromToday } from '../utils/date'
 
 export default function ClassDetailModal({ classData, school, onClose, onEdit, onNavigate }) {
   if (!classData) return null
@@ -14,11 +15,11 @@ export default function ClassDetailModal({ classData, school, onClose, onEdit, o
   }
 
   const getNextEvent = () => {
-    const eventDate = new Date(classData.eventDate)
-    const today = new Date()
-    if (eventDate > today) {
-      return `em ${Math.ceil((eventDate - today) / (1000 * 60 * 60 * 24))} dias`
-    }
+    const days = getDaysFromToday(classData.eventDate)
+    if (days === null) return 'Data não informada'
+    if (days > 1) return `em ${days} dias`
+    if (days === 1) return 'amanhã'
+    if (days === 0) return 'hoje'
     return 'Evento realizado'
   }
 
@@ -98,12 +99,7 @@ export default function ClassDetailModal({ classData, school, onClose, onEdit, o
               <div>
                 <p className="text-gray-600 text-sm font-medium mb-1">Data da Festa</p>
                 <p className="font-semibold text-nirart-text">
-                  {new Date(classData.eventDate).toLocaleDateString('pt-BR', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
+                  {formatDateBR(classData.eventDate)}
                 </p>
               </div>
             </div>
