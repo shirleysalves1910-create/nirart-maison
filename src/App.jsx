@@ -31,6 +31,7 @@ import Pagamentos from './pages/Pagamentos'
 import CadastroPagamento from './pages/CadastroPagamento'
 import DetalhesPagamento from './pages/DetalhesPagamento'
 import BaixaParcela from './pages/BaixaParcela'
+import ReciboPagamento from './pages/ReciboPagamento'
 import Agenda from './pages/Agenda'
 import CadastroEvento from './pages/CadastroEvento'
 import DetalhesEvento from './pages/DetalhesEvento'
@@ -86,6 +87,7 @@ function App() {
         <Route path="/cadastro-pagamento/:id" element={<CadastroPagamento />} />
         <Route path="/pagamentos/:id" element={<DetalhesPagamento />} />
         <Route path="/pagamentos/:id/baixa/:parcelaId" element={<BaixaParcela />} />
+        <Route path="/pagamentos/:id/recibo" element={<ReciboPagamento />} />
         <Route path="/agenda" element={<Agenda />} />
         <Route path="/agenda/:id" element={<DetalhesEvento />} />
         <Route path="/cadastro-evento" element={<CadastroEvento />} />
