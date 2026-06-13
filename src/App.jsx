@@ -61,6 +61,7 @@ function App() {
         <Route path="/medidas-femininas/:id" element={<MedidasFemininas />} />
         <Route path="/medidas-masculinas/:id" element={<MedidasMasculinas />} />
         <Route path="/historico-medidas/:id" element={<HistoricoMedidas />} />
+        <Route path="/registrar-ajuste/:id" element={<RegistrarAjuste />} />
         <Route path="/estoque" element={<Estoque />} />
         <Route path="/cadastro-roupa" element={<CadastroRoupa />} />
         <Route path="/cadastro-roupa/:id" element={<CadastroRoupa />} />
