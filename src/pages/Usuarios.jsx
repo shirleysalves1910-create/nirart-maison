@@ -1,27 +1,55 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  AlertCircle,
   Edit2,
   KeyRound,
+  LoaderCircle,
   MoreHorizontal,
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   UserCheck,
   UserRound,
   UserX
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_USERS, USER_PROFILES, USER_STATUSES } from '../data/settingsMockData'
+import { USER_PROFILES, USER_STATUSES } from '../data/settingsMockData'
+import {
+  atualizarStatusUsuario,
+  excluirUsuario,
+  listarUsuarios,
+  redefinirSenhaUsuario
+} from '../services/usuarios'
 
 export default function Usuarios() {
   const navigate = useNavigate()
-  const [users, setUsers] = useState(MOCK_USERS)
+  const [users, setUsers] = useState([])
   const [filters, setFilters] = useState({ search: '', profile: '', status: '' })
   const [openActionId, setOpenActionId] = useState(null)
   const [notification, setNotification] = useState('')
   const [confirmation, setConfirmation] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+
+  useEffect(() => {
+    loadUsers()
+  }, [])
+
+  const loadUsers = async () => {
+    setLoading(true)
+    setErrorMessage('')
+    try {
+      setUsers(await listarUsuarios())
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível carregar os usuários.'))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const filteredUsers = useMemo(() => users.filter((user) => {
     const searchable = `${user.name} ${user.email}`.toLowerCase()
@@ -38,24 +66,64 @@ export default function Usuarios() {
     administrators: users.filter((user) => user.profile === 'Administrador').length
   }
 
-  const toggleStatus = (user) => {
+  const toggleStatus = async (user) => {
     const nextStatus = user.status === 'Ativo' ? 'Inativo' : 'Ativo'
-    setUsers((current) => current.map((item) => (
-      item.id === user.id ? { ...item, status: nextStatus } : item
-    )))
-    setNotification(`${user.name} foi ${nextStatus === 'Ativo' ? 'ativado' : 'inativado'} com sucesso.`)
-    setConfirmation(null)
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      const updatedUser = await atualizarStatusUsuario(user.id, nextStatus)
+      setUsers((current) => current.map((item) => (
+        item.id === user.id ? updatedUser : item
+      )))
+      setNotification(`${user.name} foi ${nextStatus === 'Ativo' ? 'ativado' : 'inativado'} com sucesso.`)
+      setConfirmation(null)
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível alterar o status do usuário.'))
+    } finally {
+      setActionLoading(false)
+    }
   }
 
-  const resetPassword = (user) => {
-    setNotification(`Redefinição de senha mockada enviada para ${user.email}.`)
-    setConfirmation(null)
+  const resetPassword = async (user) => {
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      await redefinirSenhaUsuario(user.email)
+      setNotification(`Redefinição de senha enviada para ${user.email}.`)
+      setConfirmation(null)
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível enviar a redefinição de senha.'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const deleteUser = async (user) => {
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      await excluirUsuario(user.id)
+      setUsers((current) => current.filter((item) => item.id !== user.id))
+      setNotification(`O perfil de ${user.name} foi excluído.`)
+      setConfirmation(null)
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível excluir o usuário.'))
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   const actions = {
     edit: (user) => navigate(`/cadastro-usuario/${user.id}`),
     status: (user) => setConfirmation({ type: 'status', user }),
-    password: (user) => setConfirmation({ type: 'password', user })
+    password: (user) => setConfirmation({ type: 'password', user }),
+    delete: (user) => setConfirmation({ type: 'delete', user })
+  }
+
+  const confirmAction = () => {
+    if (confirmation.type === 'status') return toggleStatus(confirmation.user)
+    if (confirmation.type === 'delete') return deleteUser(confirmation.user)
+    return resetPassword(confirmation.user)
   }
 
   return (
@@ -75,6 +143,13 @@ export default function Usuarios() {
           <div className="flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
             <span>{notification}</span>
             <button type="button" onClick={() => setNotification('')} className="shrink-0 font-bold" aria-label="Fechar aviso">×</button>
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{errorMessage}</span>
           </div>
         )}
 
@@ -107,7 +182,11 @@ export default function Usuarios() {
         </section>
 
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          {filteredUsers.length ? (
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 p-12 text-sm text-gray-500">
+              <LoaderCircle className="animate-spin" size={20} /> Carregando usuários...
+            </div>
+          ) : filteredUsers.length ? (
             <>
               <div className="hidden lg:block">
                 <table className="w-full table-fixed text-left">
@@ -134,7 +213,8 @@ export default function Usuarios() {
                           <div className="grid grid-cols-2 gap-2">
                             <ActionButton icon={Edit2} label="Editar" onClick={() => actions.edit(user)} />
                             <ActionButton icon={user.status === 'Ativo' ? UserX : UserCheck} label={user.status === 'Ativo' ? 'Inativar' : 'Ativar'} onClick={() => actions.status(user)} />
-                            <ActionButton icon={KeyRound} label="Redefinir senha" onClick={() => actions.password(user)} className="col-span-2" />
+                            <ActionButton icon={KeyRound} label="Redefinir senha" onClick={() => actions.password(user)} />
+                            <ActionButton icon={Trash2} label="Excluir" onClick={() => actions.delete(user)} danger />
                           </div>
                         </td>
                       </tr>
@@ -170,6 +250,7 @@ export default function Usuarios() {
                           <MobileAction icon={Edit2} label="Editar usuário" onClick={() => actions.edit(user)} />
                           <MobileAction icon={user.status === 'Ativo' ? UserX : UserCheck} label={user.status === 'Ativo' ? 'Inativar usuário' : 'Ativar usuário'} onClick={() => { actions.status(user); setOpenActionId(null) }} />
                           <MobileAction icon={KeyRound} label="Redefinir senha" onClick={() => { actions.password(user); setOpenActionId(null) }} />
+                          <MobileAction icon={Trash2} label="Excluir usuário" onClick={() => { actions.delete(user); setOpenActionId(null) }} danger />
                         </div>
                       )}
                     </div>
@@ -187,9 +268,8 @@ export default function Usuarios() {
         <ConfirmationModal
           confirmation={confirmation}
           onClose={() => setConfirmation(null)}
-          onConfirm={() => confirmation.type === 'status'
-            ? toggleStatus(confirmation.user)
-            : resetPassword(confirmation.user)}
+          onConfirm={confirmAction}
+          loading={actionLoading}
         />
       )}
     </MainLayout>
@@ -206,21 +286,31 @@ function SummaryCard({ icon: Icon, label, value }) {
   )
 }
 
-function ActionButton({ icon: Icon, label, onClick, className = '' }) {
+function ActionButton({ icon: Icon, label, onClick, danger = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 px-2 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 ${className}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border px-2 py-2 text-xs font-semibold ${
+        danger
+          ? 'border-red-200 text-red-700 hover:bg-red-50'
+          : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+      }`}
     >
       <Icon size={15} /> {label}
     </button>
   )
 }
 
-function MobileAction({ icon: Icon, label, onClick }) {
+function MobileAction({ icon: Icon, label, onClick, danger = false }) {
   return (
-    <button type="button" onClick={onClick} className="flex min-h-11 w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm text-gray-700 last:border-0 hover:bg-gray-50">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-11 w-full items-center gap-3 border-b border-gray-100 px-4 py-3 text-left text-sm last:border-0 hover:bg-gray-50 ${
+        danger ? 'text-red-700' : 'text-gray-700'
+      }`}
+    >
       <Icon size={17} /> {label}
     </button>
   )
@@ -232,7 +322,7 @@ function ProfileBadge({ profile }) {
     Atendente: 'bg-blue-100 text-blue-800',
     Financeiro: 'bg-yellow-100 text-yellow-800'
   }
-  return <span className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${styles[profile]}`}>{profile}</span>
+  return <span className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${styles[profile] || 'bg-gray-100 text-gray-700'}`}>{profile}</span>
 }
 
 function StatusBadge({ status }) {
@@ -254,22 +344,31 @@ function Info({ label, value }) {
   )
 }
 
-function ConfirmationModal({ confirmation, onClose, onConfirm }) {
+function ConfirmationModal({ confirmation, onClose, onConfirm, loading }) {
   const isPassword = confirmation.type === 'password'
+  const isDelete = confirmation.type === 'delete'
+  const title = isPassword
+    ? 'Redefinir senha'
+    : isDelete
+      ? 'Excluir usuário'
+      : `${confirmation.user.status === 'Ativo' ? 'Inativar' : 'Ativar'} usuário`
+
+  const description = isPassword
+    ? `Enviar a redefinição de senha para ${confirmation.user.email}?`
+    : isDelete
+      ? `Deseja excluir o perfil de ${confirmation.user.name}? O acesso no Supabase Auth não será removido pelo navegador.`
+      : `Deseja alterar o status de ${confirmation.user.name}?`
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-nirart-text">
-          {isPassword ? 'Redefinir senha' : `${confirmation.user.status === 'Ativo' ? 'Inativar' : 'Ativar'} usuário`}
-        </h2>
-        <p className="mt-2 text-sm text-gray-600">
-          {isPassword
-            ? `Simular o envio de redefinição de senha para ${confirmation.user.email}?`
-            : `Deseja alterar o status de ${confirmation.user.name}?`}
-        </p>
+        <h2 className="text-lg font-bold text-nirart-text">{title}</h2>
+        <p className="mt-2 text-sm text-gray-600">{description}</p>
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" onClick={onClose} className="whitespace-nowrap">Cancelar</Button>
-          <Button type="button" onClick={onConfirm} className="whitespace-nowrap">Confirmar</Button>
+          <Button type="button" variant="outline" onClick={onClose} disabled={loading} className="whitespace-nowrap">Cancelar</Button>
+          <Button type="button" onClick={onConfirm} disabled={loading} className="whitespace-nowrap">
+            {loading ? 'Processando...' : 'Confirmar'}
+          </Button>
         </div>
       </div>
     </div>
@@ -277,3 +376,7 @@ function ConfirmationModal({ confirmation, onClose, onConfirm }) {
 }
 
 const filterClass = 'w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-nirart-green focus:ring-1 focus:ring-nirart-green'
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
+}

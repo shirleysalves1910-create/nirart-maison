@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  AlertCircle,
   ArrowLeft,
   Check,
+  KeyRound,
+  LoaderCircle,
   Mail,
   Save,
   ShieldCheck,
@@ -11,43 +14,78 @@ import {
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
 import {
-  getMockUserById,
   getUserProfile,
   USER_PROFILES,
   USER_STATUSES
 } from '../data/settingsMockData'
+import {
+  atualizarUsuario,
+  buscarUsuarioPorId,
+  criarUsuario
+} from '../services/usuarios'
 
 const EMPTY_FORM = {
   name: '',
   email: '',
   profile: 'Atendente',
-  status: 'Ativo'
+  status: 'Ativo',
+  password: '',
+  passwordConfirmation: ''
 }
 
 export default function CadastroUsuario() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = Boolean(id)
-  const storedUser = isEdit ? getMockUserById(id) : null
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(isEdit)
+  const [submitting, setSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    if (storedUser) {
-      setFormData({
-        name: storedUser.name,
-        email: storedUser.email,
-        profile: storedUser.profile,
-        status: storedUser.status
-      })
+    if (!isEdit) return
+
+    let active = true
+    const loadUser = async () => {
+      setLoading(true)
+      setLoadError('')
+      try {
+        const user = await buscarUsuarioPorId(id)
+        if (!active) return
+        setFormData((current) => ({
+          ...current,
+          name: user.name,
+          email: user.email,
+          profile: user.profile,
+          status: user.status
+        }))
+      } catch (error) {
+        if (!active) return
+        if (error?.code === 'PGRST116') {
+          setNotFound(true)
+        } else {
+          setLoadError(getErrorMessage(error, 'Não foi possível carregar o usuário.'))
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
     }
-  }, [storedUser])
+
+    loadUser()
+    return () => {
+      active = false
+    }
+  }, [id, isEdit])
 
   const selectedProfile = getUserProfile(formData.profile)
 
   const updateField = (field, value) => {
     setFormData((current) => ({ ...current, [field]: value }))
     setErrors((current) => ({ ...current, [field]: '' }))
+    setSubmitError('')
   }
 
   const validate = () => {
@@ -60,17 +98,55 @@ export default function CadastroUsuario() {
     }
     if (!formData.profile) nextErrors.profile = 'Selecione o perfil.'
     if (!formData.status) nextErrors.status = 'Selecione o status.'
+
+    if (!isEdit) {
+      if (formData.password.length < 6) {
+        nextErrors.password = 'A senha deve ter pelo menos 6 caracteres.'
+      }
+      if (formData.passwordConfirmation !== formData.password) {
+        nextErrors.passwordConfirmation = 'As senhas não conferem.'
+      }
+    }
+
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
+    if (loadError) return
     if (!validate()) return
-    navigate('/usuarios')
+
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      if (isEdit) {
+        await atualizarUsuario(id, formData)
+      } else {
+        await criarUsuario(formData)
+      }
+      navigate('/usuarios')
+    } catch (error) {
+      setSubmitError(getErrorMessage(
+        error,
+        isEdit ? 'Não foi possível salvar o usuário.' : 'Não foi possível criar o usuário.'
+      ))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  if (isEdit && !storedUser) {
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex min-h-80 items-center justify-center gap-3 p-8 text-sm text-gray-500">
+          <LoaderCircle className="animate-spin" size={20} /> Carregando usuário...
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (notFound) {
     return (
       <MainLayout>
         <div className="mx-auto max-w-3xl p-4 md:p-8">
@@ -106,6 +182,13 @@ export default function CadastroUsuario() {
           </div>
         </header>
 
+        {(loadError || submitError) && (
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{loadError || submitError}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm md:p-6">
             <SectionTitle icon={UserRound} title="Dados do usuário" />
@@ -125,10 +208,12 @@ export default function CadastroUsuario() {
                     type="email"
                     value={formData.email}
                     onChange={(event) => updateField('email', event.target.value)}
-                    className={`${inputClass(errors.email)} pl-10`}
+                    disabled={isEdit}
+                    className={`${inputClass(errors.email)} pl-10 disabled:bg-gray-50 disabled:text-gray-500`}
                     placeholder="usuario@nirartmaison.com.br"
                   />
                 </div>
+                {isEdit && <span className="mt-1 block text-xs text-gray-500">O e-mail de autenticação não pode ser alterado pelo cliente web.</span>}
               </Field>
               <Field label="Perfil" error={errors.profile}>
                 <select value={formData.profile} onChange={(event) => updateField('profile', event.target.value)} className={inputClass(errors.profile)}>
@@ -140,6 +225,32 @@ export default function CadastroUsuario() {
                   {USER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                 </select>
               </Field>
+
+              {!isEdit && (
+                <>
+                  <Field label="Senha inicial" error={errors.password}>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+                      <input
+                        type="password"
+                        value={formData.password}
+                        onChange={(event) => updateField('password', event.target.value)}
+                        className={`${inputClass(errors.password)} pl-10`}
+                        autoComplete="new-password"
+                      />
+                    </div>
+                  </Field>
+                  <Field label="Confirmar senha" error={errors.passwordConfirmation}>
+                    <input
+                      type="password"
+                      value={formData.passwordConfirmation}
+                      onChange={(event) => updateField('passwordConfirmation', event.target.value)}
+                      className={inputClass(errors.passwordConfirmation)}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                </>
+              )}
             </div>
           </section>
 
@@ -169,16 +280,18 @@ export default function CadastroUsuario() {
             </div>
 
             <p className="mt-4 text-xs text-gray-500">
-              As permissões são definidas pelo perfil e permanecem mockadas nesta etapa.
+              As permissões são definidas pelo perfil cadastrado na tabela de usuários.
             </p>
           </section>
 
           <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
-            <Button type="button" variant="outline" onClick={() => navigate('/usuarios')} className="whitespace-nowrap">
+            <Button type="button" variant="outline" onClick={() => navigate('/usuarios')} disabled={submitting} className="whitespace-nowrap">
               Cancelar
             </Button>
-            <Button type="submit" className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
-              <Save size={18} /> {isEdit ? 'Salvar Alterações' : 'Criar Usuário'}
+            <Button type="submit" disabled={submitting || Boolean(loadError)} className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
+              {submitting
+                ? <><LoaderCircle className="animate-spin" size={18} /> Salvando...</>
+                : <><Save size={18} /> {isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</>}
             </Button>
           </div>
         </form>
@@ -212,4 +325,8 @@ function inputClass(error) {
       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
       : 'border-gray-300 focus:border-nirart-green focus:ring-nirart-green'
   }`
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }
