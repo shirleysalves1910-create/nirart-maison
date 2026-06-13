@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   AlertCircle,
@@ -44,6 +44,7 @@ export default function CadastroUsuario() {
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [notFound, setNotFound] = useState(false)
+  const submitLockRef = useRef(false)
 
   useEffect(() => {
     if (!isEdit) return
@@ -114,9 +115,11 @@ export default function CadastroUsuario() {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
+    if (submitLockRef.current || submitting) return
     if (loadError) return
     if (!validate()) return
 
+    submitLockRef.current = true
     setSubmitting(true)
     setSubmitError('')
     try {
@@ -132,6 +135,7 @@ export default function CadastroUsuario() {
         isEdit ? 'Não foi possível salvar o usuário.' : 'Não foi possível criar o usuário.'
       ))
     } finally {
+      submitLockRef.current = false
       setSubmitting(false)
     }
   }
