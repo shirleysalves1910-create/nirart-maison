@@ -1,220 +1,354 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { AlertCircle, LoaderCircle } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_SCHOOLS, MOCK_CLASSES, MOCK_STUDENTS } from '../data/mockData'
+import {
+  atualizarAluno,
+  buscarAlunoPorId,
+  criarAluno
+} from '../services/alunos'
+import { listarEscolas } from '../services/escolas'
+import { listarTurmas } from '../services/turmas'
+
+const EMPTY_FORM = {
+  schoolId: '',
+  classId: '',
+  fullName: '',
+  sex: 'F',
+  birthDate: '',
+  phone: '',
+  address: '',
+  guardianName: '',
+  guardianPhone: '',
+  notes: '',
+  status: 'Ativo'
+}
 
 export default function CadastroAluno() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = Boolean(id)
-
-  const [formData, setFormData] = useState({
-    schoolId: '',
-    classId: '',
-    fullName: '',
-    sex: 'F',
-    birthDate: '',
-    phone: '',
-    address: '',
-    guardianName: '',
-    guardianPhone: '',
-    notes: '',
-    status: 'Ativo'
-  })
+  const [schools, setSchools] = useState([])
+  const [classes, setClasses] = useState([])
+  const [formData, setFormData] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    if (isEdit) {
-      const student = MOCK_STUDENTS.find((item) => String(item.id) === String(id))
-      if (student) {
-        setFormData({
-          schoolId: student.schoolId,
-          classId: student.classId,
-          fullName: student.fullName,
-          sex: student.sex,
-          birthDate: student.birthDate,
-          phone: student.phone,
-          address: student.address,
-          guardianName: student.guardianName,
-          guardianPhone: student.guardianPhone,
-          notes: student.notes,
-          status: student.status
-        })
+    let active = true
+
+    const loadData = async () => {
+      setLoading(true)
+      setLoadError('')
+      try {
+        const [schoolsData, classesData, student] = await Promise.all([
+          listarEscolas(),
+          listarTurmas(),
+          isEdit ? buscarAlunoPorId(id) : Promise.resolve(null)
+        ])
+
+        if (!active) return
+        setSchools(schoolsData)
+        setClasses(classesData)
+
+        if (student) {
+          setFormData({
+            schoolId: student.schoolId,
+            classId: student.classId,
+            fullName: student.fullName,
+            sex: student.sex,
+            birthDate: student.birthDate,
+            phone: student.phone,
+            address: student.address,
+            guardianName: student.guardianName,
+            guardianPhone: student.guardianPhone,
+            notes: student.notes,
+            status: student.status
+          })
+        }
+      } catch (error) {
+        if (!active) return
+        if (error?.code === 'PGRST116') {
+          setNotFound(true)
+        } else {
+          setLoadError(getErrorMessage(error, 'Não foi possível carregar os dados do aluno.'))
+        }
+      } finally {
+        if (active) setLoading(false)
       }
+    }
+
+    loadData()
+    return () => {
+      active = false
     }
   }, [id, isEdit])
 
-  const validateForm = () => {
-    const newErrors = {}
-    if (!formData.schoolId) newErrors.schoolId = 'Selecione a escola'
-    if (!formData.classId) newErrors.classId = 'Selecione a turma'
-    if (!formData.fullName.trim()) newErrors.fullName = 'Nome completo é obrigatório'
-    if (!formData.sex) newErrors.sex = 'Sexo é obrigatório'
-    if (!formData.birthDate) newErrors.birthDate = 'Data de nascimento é obrigatória'
-    if (!formData.phone.trim()) newErrors.phone = 'Telefone é obrigatório'
-    if (!formData.address.trim()) newErrors.address = 'Endereço é obrigatório'
-    if (!formData.guardianName.trim()) newErrors.guardianName = 'Nome do responsável é obrigatório'
-    if (!formData.guardianPhone.trim()) newErrors.guardianPhone = 'Telefone do responsável é obrigatório'
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+  const availableClasses = useMemo(() => (
+    classes.filter((classData) => classData.schoolId === formData.schoolId)
+  ), [classes, formData.schoolId])
+
+  const updateField = (field, value) => {
+    setFormData((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === 'schoolId' ? { classId: '' } : {})
+    }))
+    setErrors((current) => ({
+      ...current,
+      [field]: '',
+      ...(field === 'schoolId' ? { classId: '' } : {})
+    }))
+    setSubmitError('')
   }
 
-  const handleSubmit = (event) => {
+  const validateForm = () => {
+    const nextErrors = {}
+    if (!formData.schoolId) nextErrors.schoolId = 'Selecione a escola.'
+    if (!formData.classId) nextErrors.classId = 'Selecione a turma.'
+    if (!formData.fullName.trim()) nextErrors.fullName = 'Nome completo é obrigatório.'
+    if (!formData.sex) nextErrors.sex = 'Sexo é obrigatório.'
+    if (!formData.birthDate) nextErrors.birthDate = 'Data de nascimento é obrigatória.'
+    if (!formData.phone.trim()) nextErrors.phone = 'Telefone é obrigatório.'
+    if (!formData.address.trim()) nextErrors.address = 'Endereço é obrigatório.'
+    if (!formData.guardianName.trim()) nextErrors.guardianName = 'Nome do responsável é obrigatório.'
+    if (!formData.guardianPhone.trim()) nextErrors.guardianPhone = 'Telefone do responsável é obrigatório.'
+
+    const selectedClass = classes.find((classData) => classData.id === formData.classId)
+    if (formData.classId && selectedClass?.schoolId !== formData.schoolId) {
+      nextErrors.classId = 'A turma selecionada não pertence à escola.'
+    }
+
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const handleSubmit = async (event) => {
     event.preventDefault()
-    if (!validateForm()) return
-    navigate('/alunos')
+    if (loadError || !validateForm()) return
+
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      if (isEdit) {
+        await atualizarAluno(id, formData)
+      } else {
+        await criarAluno(formData)
+      }
+      navigate('/alunos')
+    } catch (error) {
+      setSubmitError(getErrorMessage(
+        error,
+        isEdit ? 'Não foi possível atualizar o aluno.' : 'Não foi possível cadastrar o aluno.'
+      ))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex min-h-80 items-center justify-center gap-3 p-8 text-sm text-gray-500">
+          <LoaderCircle className="animate-spin" size={20} /> Carregando aluno...
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (notFound) {
+    return (
+      <MainLayout>
+        <div className="mx-auto max-w-4xl p-4 md:p-8">
+          <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
+            <h1 className="text-2xl font-bold text-nirart-text">Aluno não encontrado</h1>
+            <p className="mt-2 text-gray-600">Selecione um aluno válido na listagem.</p>
+            <Button className="mt-6" onClick={() => navigate('/alunos')}>Voltar para Alunos</Button>
+          </div>
+        </div>
+      </MainLayout>
+    )
   }
 
   return (
     <MainLayout>
-      <div className="p-4 md:p-8 max-w-4xl mx-auto">
+      <div className="mx-auto max-w-4xl p-4 md:p-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-nirart-text">{isEdit ? 'Editar Aluno' : 'Cadastrar Aluno'}</h1>
-          <p className="text-gray-600 text-sm mt-1">Preencha os dados completos do aluno</p>
+          <p className="mt-1 text-sm text-gray-600">Preencha os dados completos do aluno</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6 bg-white border border-gray-200 rounded-lg p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Escola</label>
+        {(loadError || submitError) && (
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{loadError || submitError}</span>
+          </div>
+        )}
+
+        {(!schools.length || !classes.length) && !loadError && (
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>Cadastre pelo menos uma escola e uma turma antes de criar um aluno.</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Escola" error={errors.schoolId}>
               <select
                 value={formData.schoolId}
-                onChange={(e) => setFormData({ ...formData, schoolId: Number(e.target.value), classId: '' })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.schoolId ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('schoolId', event.target.value)}
+                className={inputClass(errors.schoolId)}
               >
                 <option value="">Selecione a escola</option>
-                {MOCK_SCHOOLS.map((school) => (
+                {schools.map((school) => (
                   <option key={school.id} value={school.id}>{school.fantasyName}</option>
                 ))}
               </select>
-              {errors.schoolId && <p className="text-red-600 text-sm mt-1">{errors.schoolId}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Turma</label>
+            </Field>
+            <Field label="Turma" error={errors.classId}>
               <select
                 value={formData.classId}
-                onChange={(e) => setFormData({ ...formData, classId: Number(e.target.value) })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.classId ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('classId', event.target.value)}
+                disabled={!formData.schoolId}
+                className={`${inputClass(errors.classId)} disabled:bg-gray-50`}
               >
                 <option value="">Selecione a turma</option>
-                {MOCK_CLASSES.filter((item) => !formData.schoolId || item.schoolId === formData.schoolId).map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
+                {availableClasses.map((classData) => (
+                  <option key={classData.id} value={classData.id}>{classData.name}</option>
                 ))}
               </select>
-              {errors.classId && <p className="text-red-600 text-sm mt-1">{errors.classId}</p>}
-            </div>
+            </Field>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Nome Completo" error={errors.fullName}>
               <input
                 value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.fullName ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('fullName', event.target.value)}
+                className={inputClass(errors.fullName)}
                 type="text"
               />
-              {errors.fullName && <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sexo</label>
+            </Field>
+            <Field label="Sexo" error={errors.sex}>
               <select
                 value={formData.sex}
-                onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.sex ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('sex', event.target.value)}
+                className={inputClass(errors.sex)}
               >
                 <option value="F">Feminino</option>
                 <option value="M">Masculino</option>
                 <option value="O">Outro</option>
               </select>
-              {errors.sex && <p className="text-red-600 text-sm mt-1">{errors.sex}</p>}
-            </div>
+            </Field>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Field label="Data de Nascimento" error={errors.birthDate}>
               <input
                 type="date"
                 value={formData.birthDate}
-                onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.birthDate ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('birthDate', event.target.value)}
+                className={inputClass(errors.birthDate)}
               />
-              {errors.birthDate && <p className="text-red-600 text-sm mt-1">{errors.birthDate}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+            </Field>
+            <Field label="Telefone" error={errors.phone}>
               <input
                 type="tel"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.phone ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('phone', event.target.value)}
+                className={inputClass(errors.phone)}
               />
-              {errors.phone && <p className="text-red-600 text-sm mt-1">{errors.phone}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            </Field>
+            <Field label="Status">
               <select
                 value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                onChange={(event) => updateField('status', event.target.value)}
+                className={inputClass()}
               >
                 <option value="Ativo">Ativo</option>
                 <option value="Inativo">Inativo</option>
               </select>
-            </div>
+            </Field>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+          <Field label="Endereço" error={errors.address}>
             <input
               type="text"
               value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className={`w-full px-3 py-2 border rounded-lg ${errors.address ? 'border-red-500' : 'border-gray-300'}`}
+              onChange={(event) => updateField('address', event.target.value)}
+              className={inputClass(errors.address)}
             />
-            {errors.address && <p className="text-red-600 text-sm mt-1">{errors.address}</p>}
-          </div>
+          </Field>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Responsável</label>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Nome do Responsável" error={errors.guardianName}>
               <input
                 type="text"
                 value={formData.guardianName}
-                onChange={(e) => setFormData({ ...formData, guardianName: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.guardianName ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('guardianName', event.target.value)}
+                className={inputClass(errors.guardianName)}
               />
-              {errors.guardianName && <p className="text-red-600 text-sm mt-1">{errors.guardianName}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefone do Responsável</label>
+            </Field>
+            <Field label="Telefone do Responsável" error={errors.guardianPhone}>
               <input
                 type="tel"
                 value={formData.guardianPhone}
-                onChange={(e) => setFormData({ ...formData, guardianPhone: e.target.value })}
-                className={`w-full px-3 py-2 border rounded-lg ${errors.guardianPhone ? 'border-red-500' : 'border-gray-300'}`}
+                onChange={(event) => updateField('guardianPhone', event.target.value)}
+                className={inputClass(errors.guardianPhone)}
               />
-              {errors.guardianPhone && <p className="text-red-600 text-sm mt-1">{errors.guardianPhone}</p>}
-            </div>
+            </Field>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+          <Field label="Observações">
             <textarea
               value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg h-28"
+              onChange={(event) => updateField('notes', event.target.value)}
+              className={`${inputClass()} h-28 resize-none`}
             />
-          </div>
+          </Field>
 
-          <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => navigate('/alunos')}>Cancelar</Button>
-            <Button type="submit" variant="primary">{isEdit ? 'Salvar Alterações' : 'Cadastrar Aluno'}</Button>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => navigate('/alunos')} disabled={submitting}>Cancelar</Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={submitting || Boolean(loadError) || !schools.length || !classes.length}
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap"
+            >
+              {submitting && <LoaderCircle className="animate-spin" size={18} />}
+              {submitting ? 'Salvando...' : isEdit ? 'Salvar Alterações' : 'Cadastrar Aluno'}
+            </Button>
           </div>
         </form>
       </div>
     </MainLayout>
   )
+}
+
+function Field({ label, error, children }) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>
+      {children}
+      {error && <span className="mt-1 block text-sm text-red-600">{error}</span>}
+    </label>
+  )
+}
+
+function inputClass(error) {
+  return `w-full min-w-0 rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 ${
+    error
+      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+      : 'border-gray-300 focus:border-nirart-green focus:ring-nirart-green'
+  }`
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }

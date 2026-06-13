@@ -1,23 +1,87 @@
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { Ruler, CalendarCheck, Clock, Plus } from 'lucide-react'
-import { MOCK_STUDENTS, MOCK_SCHOOLS, MOCK_CLASSES } from '../data/mockData'
+import { AlertCircle, CalendarCheck, Clock, LoaderCircle, Plus, Ruler } from 'lucide-react'
 import {
   getReservationItem,
   getReservationTotal,
   MOCK_RESERVATIONS
 } from '../data/reservationMockData'
+import { buscarAlunoPorId } from '../services/alunos'
+import { listarEscolas } from '../services/escolas'
+import { listarTurmas } from '../services/turmas'
+import { formatDateBR } from '../utils/date'
 
 export default function DetalhesAluno() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const student = MOCK_STUDENTS.find((item) => String(item.id) === String(id))
-  const school = MOCK_SCHOOLS.find((item) => item.id === student?.schoolId)
-  const studentClass = MOCK_CLASSES.find((item) => item.id === student?.classId)
+  const [student, setStudent] = useState(null)
+  const [school, setSchool] = useState(null)
+  const [studentClass, setStudentClass] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [notFound, setNotFound] = useState(false)
   const studentReservations = MOCK_RESERVATIONS.filter((item) => String(item.studentId) === String(id))
 
-  if (!student) {
+  useEffect(() => {
+    let active = true
+
+    const loadData = async () => {
+      setLoading(true)
+      setErrorMessage('')
+      try {
+        const [studentData, schools, classes] = await Promise.all([
+          buscarAlunoPorId(id),
+          listarEscolas(),
+          listarTurmas()
+        ])
+        if (!active) return
+        setStudent(studentData)
+        setSchool(schools.find((item) => item.id === studentData.schoolId) || null)
+        setStudentClass(classes.find((item) => item.id === studentData.classId) || null)
+      } catch (error) {
+        if (!active) return
+        if (error?.code === 'PGRST116') {
+          setNotFound(true)
+        } else {
+          setErrorMessage(getErrorMessage(error, 'Não foi possível carregar o aluno.'))
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadData()
+    return () => {
+      active = false
+    }
+  }, [id])
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex min-h-80 items-center justify-center gap-3 p-8 text-sm text-gray-500">
+          <LoaderCircle className="animate-spin" size={20} /> Carregando aluno...
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (errorMessage) {
+    return (
+      <MainLayout>
+        <div className="mx-auto max-w-4xl p-4 md:p-8">
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{errorMessage}</span>
+          </div>
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (notFound || !student) {
     return (
       <MainLayout>
         <div className="p-4 md:p-8 max-w-4xl mx-auto">
@@ -66,10 +130,10 @@ export default function DetalhesAluno() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-          <StatCard label="Última reserva" value={student.lastReservation} />
-          <StatCard label="Próxima prova" value={student.nextTest} />
-          <StatCard label="Valor em aberto" value={`R$ ${student.balanceDue},00`} />
-          <StatCard label="Última medição" value={student.lastMeasurement} />
+          <StatCard label="Reservas" value={`${student.reservationsCount} registros`} />
+          <StatCard label="Medidas" value={`${student.measuresCount} registros`} />
+          <StatCard label="Escola" value={school?.fantasyName} />
+          <StatCard label="Turma" value={studentClass?.name} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -85,7 +149,7 @@ export default function DetalhesAluno() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <InfoRow label="Nome" value={student.fullName} />
               <InfoRow label="Sexo" value={student.sex === 'F' ? 'Feminino' : student.sex === 'M' ? 'Masculino' : 'Outro'} />
-              <InfoRow label="Data Nascimento" value={new Date(student.birthDate).toLocaleDateString('pt-BR')} />
+              <InfoRow label="Data Nascimento" value={formatDateBR(student.birthDate)} />
               <InfoRow label="Telefone" value={student.phone} />
               <InfoRow label="Endereço" value={student.address} className="md:col-span-2" />
             </div>
@@ -219,4 +283,8 @@ function formatDate(value) {
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }
