@@ -1,51 +1,111 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save } from 'lucide-react'
+import { AlertCircle, ArrowLeft, LoaderCircle, Save } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_SCHOOLS } from '../data/mockData'
+import {
+  atualizarEscola,
+  buscarEscolaPorId,
+  criarEscola
+} from '../services/escolas'
+
+const EMPTY_FORM = {
+  fantasyName: '',
+  cnpj: '',
+  email: '',
+  phone: '',
+  address: '',
+  city: '',
+  state: 'SP',
+  zipcode: '',
+  responsible: '',
+  notes: '',
+  status: 'Ativa'
+}
+
+const BRAZILIAN_STATES = [
+  { value: 'AC', label: 'AC - Acre' },
+  { value: 'AL', label: 'AL - Alagoas' },
+  { value: 'AP', label: 'AP - Amapá' },
+  { value: 'AM', label: 'AM - Amazonas' },
+  { value: 'BA', label: 'BA - Bahia' },
+  { value: 'CE', label: 'CE - Ceará' },
+  { value: 'DF', label: 'DF - Distrito Federal' },
+  { value: 'ES', label: 'ES - Espírito Santo' },
+  { value: 'GO', label: 'GO - Goiás' },
+  { value: 'MA', label: 'MA - Maranhão' },
+  { value: 'MT', label: 'MT - Mato Grosso' },
+  { value: 'MS', label: 'MS - Mato Grosso do Sul' },
+  { value: 'MG', label: 'MG - Minas Gerais' },
+  { value: 'PA', label: 'PA - Pará' },
+  { value: 'PB', label: 'PB - Paraíba' },
+  { value: 'PR', label: 'PR - Paraná' },
+  { value: 'PE', label: 'PE - Pernambuco' },
+  { value: 'PI', label: 'PI - Piauí' },
+  { value: 'RJ', label: 'RJ - Rio de Janeiro' },
+  { value: 'RN', label: 'RN - Rio Grande do Norte' },
+  { value: 'RS', label: 'RS - Rio Grande do Sul' },
+  { value: 'RO', label: 'RO - Rondônia' },
+  { value: 'RR', label: 'RR - Roraima' },
+  { value: 'SC', label: 'SC - Santa Catarina' },
+  { value: 'SP', label: 'SP - São Paulo' },
+  { value: 'SE', label: 'SE - Sergipe' },
+  { value: 'TO', label: 'TO - Tocantins' }
+]
 
 export default function CadastroEscola() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEditing = !!id
 
-  const [formData, setFormData] = useState({
-    fantasyName: '',
-    cnpj: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: 'SP',
-    zipcode: '',
-    responsible: '',
-    notes: '',
-    status: 'Ativa'
-  })
-
+  const [formData, setFormData] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const school = MOCK_SCHOOLS.find((item) => String(item.id) === String(id))
+  const [isLoading, setIsLoading] = useState(isEditing)
+  const [loadError, setLoadError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    if (school) {
-      setFormData({
-        fantasyName: school.fantasyName,
-        cnpj: school.cnpj,
-        email: school.email || '',
-        phone: school.phone,
-        address: school.address,
-        city: school.city,
-        state: school.state,
-        zipcode: school.zipcode,
-        responsible: school.responsible,
-        notes: school.notes || '',
-        status: school.status || 'Ativa'
-      })
+    if (!isEditing) return
+
+    let active = true
+    const loadSchool = async () => {
+      setIsLoading(true)
+      setLoadError('')
+      try {
+        const school = await buscarEscolaPorId(id)
+        if (!active) return
+        setFormData({
+          fantasyName: school.fantasyName,
+          cnpj: school.cnpj,
+          email: school.email,
+          phone: school.phone,
+          address: school.address,
+          city: school.city,
+          state: school.state || 'SP',
+          zipcode: school.zipcode,
+          responsible: school.responsible,
+          notes: school.notes,
+          status: school.status || 'Ativa'
+        })
+      } catch (error) {
+        if (!active) return
+        if (error?.code === 'PGRST116') {
+          setNotFound(true)
+        } else {
+          setLoadError(getErrorMessage(error, 'Não foi possível carregar a escola.'))
+        }
+      } finally {
+        if (active) setIsLoading(false)
+      }
     }
-  }, [school])
+
+    loadSchool()
+    return () => {
+      active = false
+    }
+  }, [id, isEditing])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -60,6 +120,7 @@ export default function CadastroEscola() {
         [name]: ''
       }))
     }
+    setSubmitError('')
   }
 
   const validateForm = () => {
@@ -99,19 +160,56 @@ export default function CadastroEscola() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+    if (loadError) return
+
     if (!validateForm()) {
       return
     }
 
     setIsSubmitting(true)
-    
-    // Simular envio
-    setTimeout(() => {
-      console.log('Dados da escola:', formData)
+    setSubmitError('')
+
+    try {
+      if (isEditing) {
+        await atualizarEscola(id, formData)
+      } else {
+        await criarEscola(formData)
+      }
       navigate('/escolas')
+    } catch (error) {
+      const fallback = error?.code === '23505'
+        ? 'Já existe uma escola cadastrada com este CNPJ.'
+        : isEditing
+          ? 'Não foi possível atualizar a escola.'
+          : 'Não foi possível cadastrar a escola.'
+      setSubmitError(getErrorMessage(error, fallback))
+    } finally {
       setIsSubmitting(false)
-    }, 500)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="flex min-h-80 items-center justify-center gap-3 p-8 text-sm text-gray-500">
+          <LoaderCircle className="animate-spin" size={20} /> Carregando escola...
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (notFound) {
+    return (
+      <MainLayout>
+        <div className="mx-auto max-w-3xl p-4 md:p-8">
+          <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
+            <h1 className="text-2xl font-bold text-nirart-text">Escola não encontrada</h1>
+            <p className="mt-2 text-gray-600">Selecione uma escola válida na listagem.</p>
+            <Button className="mt-6" onClick={() => navigate('/escolas')}>Voltar para Escolas</Button>
+          </div>
+        </div>
+      </MainLayout>
+    )
   }
 
   return (
@@ -134,6 +232,13 @@ export default function CadastroEscola() {
             </p>
           </div>
         </div>
+
+        {(loadError || submitError) && (
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{loadError || submitError}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           {/* Informações Básicas */}
@@ -294,11 +399,11 @@ export default function CadastroEscola() {
                       onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-nirart-green focus:outline-none focus:ring-1 focus:ring-nirart-green transition-all text-sm"
                     >
-                      <option value="SP">SP - São Paulo</option>
-                      <option value="RJ">RJ - Rio de Janeiro</option>
-                      <option value="MG">MG - Minas Gerais</option>
-                      <option value="BA">BA - Bahia</option>
-                      <option value="SC">SC - Santa Catarina</option>
+                      {BRAZILIAN_STATES.map((state) => (
+                        <option key={state.value} value={state.value}>
+                          {state.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -406,10 +511,10 @@ export default function CadastroEscola() {
             <Button
               type="submit"
               variant="primary"
-              disabled={isSubmitting}
+              disabled={isSubmitting || Boolean(loadError)}
               className="flex items-center gap-2"
             >
-              <Save size={18} />
+              {isSubmitting ? <LoaderCircle className="animate-spin" size={18} /> : <Save size={18} />}
               {isSubmitting ? 'Salvando...' : isEditing ? 'Atualizar Escola' : 'Cadastrar Escola'}
             </Button>
           </div>
@@ -417,4 +522,8 @@ export default function CadastroEscola() {
       </div>
     </MainLayout>
   )
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }
