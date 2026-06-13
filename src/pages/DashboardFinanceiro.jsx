@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -11,16 +11,38 @@ import {
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_SCHOOLS } from '../data/mockData'
 import {
-  buildReportData,
-  DEFAULT_REPORT_FILTERS
-} from '../data/reportMockData'
+  carregarBaseRelatorios,
+  DEFAULT_REPORT_FILTERS,
+  gerarRelatorio
+} from '../services/relatorios'
+import { RESERVATION_STATUSES } from '../services/reservas'
 
 export default function DashboardFinanceiro() {
   const navigate = useNavigate()
   const [filters, setFilters] = useState(DEFAULT_REPORT_FILTERS)
-  const report = useMemo(() => buildReportData(filters), [filters])
+  const [base, setBase] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const report = useMemo(() => gerarRelatorio(base, filters), [base, filters])
+
+  useEffect(() => {
+    let active = true
+    carregarBaseRelatorios()
+      .then((data) => {
+        if (active) setBase(data)
+      })
+      .catch((loadError) => {
+        console.error(loadError)
+        if (active) setError('Não foi possível carregar o dashboard financeiro.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   return (
     <MainLayout>
@@ -41,7 +63,10 @@ export default function DashboardFinanceiro() {
           </Button>
         </header>
 
-        <FinancialFilters filters={filters} setFilters={setFilters} />
+        <FinancialFilters filters={filters} setFilters={setFilters} schools={report.schools} />
+
+        {error && <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+        {loading && <p className="rounded-lg border bg-white p-8 text-center text-sm text-gray-500">Carregando dashboard financeiro...</p>}
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <FinanceMetric icon={TrendingUp} label="Recebido no mês" value={formatCurrency(report.receivedInMonth)} style="bg-green-50 text-green-700" />
@@ -100,7 +125,7 @@ export default function DashboardFinanceiro() {
   )
 }
 
-function FinancialFilters({ filters, setFilters }) {
+function FinancialFilters({ filters, setFilters, schools }) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -113,7 +138,7 @@ function FinancialFilters({ filters, setFilters }) {
           Limpar filtros
         </button>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <FilterField label="Período inicial">
           <input
             type="date"
@@ -137,7 +162,17 @@ function FinancialFilters({ filters, setFilters }) {
             className={filterClass}
           >
             <option value="">Todas as escolas</option>
-            {MOCK_SCHOOLS.map((school) => <option key={school.id} value={school.id}>{school.fantasyName}</option>)}
+            {schools.map((school) => <option key={school.id} value={school.id}>{school.fantasyName}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Status da reserva">
+          <select
+            value={filters.status}
+            onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+            className={filterClass}
+          >
+            <option value="">Todos os status</option>
+            {RESERVATION_STATUSES.map((status) => <option key={status} value={status}>{capitalize(status)}</option>)}
           </select>
         </FilterField>
       </div>
@@ -340,9 +375,14 @@ const filterClass = 'w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 
 
 function formatDate(value) {
   if (!value) return '—'
-  return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR')
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+}
+
+function capitalize(value = '') {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }

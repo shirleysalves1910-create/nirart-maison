@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -16,20 +16,40 @@ import {
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_CLASSES, MOCK_SCHOOLS } from '../data/mockData'
-import { RESERVATION_STATUSES } from '../data/reservationMockData'
 import {
-  buildReportData,
+  carregarBaseRelatorios,
   DEFAULT_REPORT_FILTERS,
-  getReportContext
-} from '../data/reportMockData'
+  gerarRelatorio
+} from '../services/relatorios'
+import { RESERVATION_STATUSES } from '../services/reservas'
 
 const ITEM_TYPES = ['Roupa', 'Sapato', 'Acessorio', 'Kit']
 
 export default function Relatorios() {
   const navigate = useNavigate()
   const [filters, setFilters] = useState(DEFAULT_REPORT_FILTERS)
-  const report = useMemo(() => buildReportData(filters), [filters])
+  const [base, setBase] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const report = useMemo(() => gerarRelatorio(base, filters), [base, filters])
+
+  useEffect(() => {
+    let active = true
+    carregarBaseRelatorios()
+      .then((data) => {
+        if (active) setBase(data)
+      })
+      .catch((loadError) => {
+        console.error(loadError)
+        if (active) setError('Não foi possível carregar os relatórios.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   return (
     <MainLayout>
@@ -49,7 +69,10 @@ export default function Relatorios() {
           </Button>
         </header>
 
-        <ReportFilters filters={filters} setFilters={setFilters} />
+        <ReportFilters filters={filters} setFilters={setFilters} schools={report.schools} classes={report.classes} />
+
+        {error && <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+        {loading && <p className="rounded-lg border bg-white p-8 text-center text-sm text-gray-500">Carregando relatórios...</p>}
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <MetricCard icon={TrendingUp} label="Faturamento do mês" value={formatCurrency(report.receivedInMonth)} tone="green" />
@@ -116,16 +139,16 @@ export default function Relatorios() {
             <ResponsiveTable
               columns={['Cliente/aluno', 'Escola', 'Data prevista', 'Reserva']}
               rows={report.upcomingReturns.map((itemReturn) => {
-                const context = getReportContext(itemReturn.reservationId)
+                const context = itemReturn.reservation || {}
                 return {
                   id: itemReturn.id,
                   values: [
                     context.student?.fullName,
                     context.school?.fantasyName,
                     formatDate(itemReturn.expectedReturnDate),
-                    `#${itemReturn.reservationId}`
+                    `#${shortId(itemReturn.reservationId)}`
                   ],
-                  badge: itemReturn.expectedReturnDate < '2026-06-12' ? 'Atrasada' : 'Pendente'
+                  badge: itemReturn.expectedReturnDate < getLocalDate() ? 'Atrasada' : 'Pendente'
                 }
               })}
               emptyText="Nenhuma devolução pendente."
@@ -152,12 +175,11 @@ export default function Relatorios() {
             <ResponsiveTable
               columns={['Aluno', 'Escola', 'Evento', 'Status']}
               rows={report.recentReservations.map((reservation) => {
-                const context = getReportContext(reservation.id)
                 return {
                   id: reservation.id,
                   values: [
-                    context.student?.fullName,
-                    context.school?.fantasyName,
+                    reservation.student?.fullName,
+                    reservation.school?.fantasyName,
                     formatDate(reservation.eventDate),
                     capitalize(reservation.status)
                   ]
@@ -184,8 +206,8 @@ export default function Relatorios() {
   )
 }
 
-function ReportFilters({ filters, setFilters }) {
-  const filteredClasses = MOCK_CLASSES.filter((item) => (
+function ReportFilters({ filters, setFilters, schools, classes }) {
+  const filteredClasses = classes.filter((item) => (
     !filters.schoolId || String(item.schoolId) === String(filters.schoolId)
   ))
   const update = (field, value) => setFilters((current) => ({ ...current, [field]: value }))
@@ -219,7 +241,7 @@ function ReportFilters({ filters, setFilters }) {
             className={filterClass}
           >
             <option value="">Todas as escolas</option>
-            {MOCK_SCHOOLS.map((school) => <option key={school.id} value={school.id}>{school.fantasyName}</option>)}
+            {schools.map((school) => <option key={school.id} value={school.id}>{school.fantasyName}</option>)}
           </select>
         </FilterField>
         <FilterField label="Turma">
@@ -465,7 +487,8 @@ const filterClass = 'w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 
 
 function formatDate(value) {
   if (!value) return '—'
-  return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR')
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
 function formatCurrency(value) {
@@ -474,4 +497,13 @@ function formatCurrency(value) {
 
 function capitalize(value) {
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function shortId(value) {
+  return String(value || '').slice(0, 8)
+}
+
+function getLocalDate() {
+  const today = new Date()
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 }
