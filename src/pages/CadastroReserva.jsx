@@ -1,16 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Box, PackageOpen, Plus, Ruler, Shirt, Sparkles, Trash2 } from 'lucide-react'
+import {
+  AlertCircle,
+  Box,
+  LoaderCircle,
+  PackageOpen,
+  Plus,
+  Ruler,
+  Shirt,
+  Sparkles,
+  Trash2
+} from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_CLASSES, MOCK_MEASUREMENTS, MOCK_SCHOOLS, MOCK_STUDENTS } from '../data/mockData'
-import { MOCK_INVENTORY_ITEMS } from '../data/inventoryMockData'
+import { listarAlunos } from '../services/alunos'
+import { listarEscolas } from '../services/escolas'
+import { listarEstoque } from '../services/estoque'
+import { listarMedidas } from '../services/medidas'
 import {
-  getInventoryRentalValue,
-  getReservationById,
+  atualizarReserva,
+  buscarReservaPorId,
+  calcularTotalReserva,
+  criarReserva,
   RESERVATION_STATUSES,
   SERVICE_TYPES
-} from '../data/reservationMockData'
+} from '../services/reservas'
+import { listarTurmas } from '../services/turmas'
 
 const ITEM_TYPES = [
   { value: 'Roupa', label: 'Roupa', icon: Shirt },
@@ -20,6 +35,7 @@ const ITEM_TYPES = [
 ]
 
 const EMPTY_FORM = {
+  clientId: '',
   studentId: '',
   schoolId: '',
   classId: '',
@@ -40,45 +56,114 @@ export default function CadastroReserva() {
   const [searchParams] = useSearchParams()
   const isEdit = Boolean(id)
   const [formData, setFormData] = useState(EMPTY_FORM)
+  const [students, setStudents] = useState([])
+  const [schools, setSchools] = useState([])
+  const [classes, setClasses] = useState([])
+  const [inventoryItems, setInventoryItems] = useState([])
+  const [measurements, setMeasurements] = useState([])
   const [selectedType, setSelectedType] = useState('Roupa')
   const [selectedInventoryId, setSelectedInventoryId] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    const reservation = isEdit ? getReservationById(id) : null
-    if (reservation) {
-      setFormData({ ...reservation })
-      return
+    let active = true
+    const loadData = async () => {
+      setLoading(true)
+      setErrorMessage('')
+      try {
+        const [studentData, schoolData, classData, inventoryData, measurementData, reservation] = await Promise.all([
+          listarAlunos(),
+          listarEscolas(),
+          listarTurmas(),
+          listarEstoque(),
+          listarMedidas(),
+          isEdit ? buscarReservaPorId(id) : Promise.resolve(null)
+        ])
+        if (!active) return
+
+        setStudents(studentData)
+        setSchools(schoolData)
+        setClasses(classData)
+        setInventoryItems(inventoryData)
+        setMeasurements(measurementData)
+
+        if (reservation) {
+          setFormData({
+            clientId: reservation.clientId,
+            studentId: reservation.studentId,
+            schoolId: reservation.schoolId,
+            classId: reservation.classId,
+            eventDate: reservation.eventDate,
+            fittingDate: reservation.fittingDate,
+            deliveryDate: reservation.deliveryDate,
+            expectedReturnDate: reservation.expectedReturnDate,
+            serviceType: reservation.serviceType,
+            serviceLocation: reservation.serviceLocation,
+            status: reservation.status,
+            notes: reservation.notes,
+            items: reservation.items.map((entry) => ({
+              inventoryId: entry.inventoryId,
+              inventoryType: entry.inventoryType,
+              quantity: entry.quantity,
+              unitValue: entry.unitValue
+            }))
+          })
+          return
+        }
+
+        const studentId = searchParams.get('alunoId')
+        const student = studentData.find((item) => item.id === studentId)
+        if (student) {
+          setFormData((current) => ({
+            ...current,
+            clientId: student.clientId,
+            studentId: student.id,
+            schoolId: student.schoolId,
+            classId: student.classId
+          }))
+        }
+      } catch (error) {
+        if (!active) return
+        if (error?.code === 'PGRST116') {
+          setNotFound(true)
+        } else {
+          setErrorMessage(getErrorMessage(error, 'Não foi possível carregar o cadastro da reserva.'))
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
     }
 
-    const studentId = searchParams.get('alunoId')
-    const student = MOCK_STUDENTS.find((item) => String(item.id) === String(studentId))
-    if (student) {
-      setFormData((current) => ({
-        ...current,
-        studentId: student.id,
-        schoolId: student.schoolId,
-        classId: student.classId
-      }))
+    loadData()
+    return () => {
+      active = false
     }
   }, [id, isEdit, searchParams])
 
-  const availableItems = MOCK_INVENTORY_ITEMS.filter((item) => item.type === selectedType)
-  const selectedInventory = MOCK_INVENTORY_ITEMS.find((item) => String(item.id) === String(selectedInventoryId))
-  const selectedMeasurement = MOCK_MEASUREMENTS.find((item) => (
-    String(item.studentId) === String(formData.studentId) && item.status === 'Ativa'
-  )) || MOCK_MEASUREMENTS.find((item) => String(item.studentId) === String(formData.studentId))
-  const total = useMemo(() => formData.items.reduce(
-    (sum, item) => sum + Number(item.quantity) * Number(item.unitValue),
-    0
-  ), [formData.items])
+  const availableItems = inventoryItems.filter((item) => (
+    item.type === selectedType &&
+    (
+      item.status !== 'Inativo' ||
+      formData.items.some((entry) => entry.inventoryId === item.id)
+    )
+  ))
+  const selectedInventory = inventoryItems.find((item) => item.id === selectedInventoryId)
+  const selectedMeasurement = measurements.find((item) => (
+    item.studentId === formData.studentId && item.status === 'Ativa'
+  )) || measurements.find((item) => item.studentId === formData.studentId)
+  const total = useMemo(() => calcularTotalReserva(formData.items), [formData.items])
 
   const handleStudentChange = (studentId) => {
-    const student = MOCK_STUDENTS.find((item) => String(item.id) === String(studentId))
+    const student = students.find((item) => item.id === studentId)
     setFormData((current) => ({
       ...current,
-      studentId: student ? student.id : '',
+      clientId: student?.clientId || '',
+      studentId: student?.id || '',
       schoolId: student?.schoolId || '',
       classId: student?.classId || ''
     }))
@@ -88,6 +173,7 @@ export default function CadastroReserva() {
   const updateField = (field, value) => {
     setFormData((current) => ({ ...current, [field]: value }))
     setErrors((current) => ({ ...current, [field]: '' }))
+    setErrorMessage('')
   }
 
   const addItem = () => {
@@ -98,7 +184,7 @@ export default function CadastroReserva() {
 
     const availableQuantity = getAvailableQuantity(selectedInventory)
     const parsedQuantity = Math.max(1, Number(quantity) || 1)
-    const existing = formData.items.find((item) => String(item.inventoryId) === String(selectedInventory.id))
+    const existing = formData.items.find((item) => item.inventoryId === selectedInventory.id)
     const finalQuantity = parsedQuantity + Number(existing?.quantity || 0)
 
     if (finalQuantity > availableQuantity) {
@@ -113,18 +199,19 @@ export default function CadastroReserva() {
       ...current,
       items: existing
         ? current.items.map((item) => (
-          String(item.inventoryId) === String(selectedInventory.id)
-            ? { ...item, quantity: finalQuantity }
-            : item
-        ))
+            item.inventoryId === selectedInventory.id
+              ? { ...item, quantity: finalQuantity }
+              : item
+          ))
         : [
-          ...current.items,
-          {
-            inventoryId: selectedInventory.id,
-            quantity: parsedQuantity,
-            unitValue: getInventoryRentalValue(selectedInventory)
-          }
-        ]
+            ...current.items,
+            {
+              inventoryId: selectedInventory.id,
+              inventoryType: selectedInventory.type,
+              quantity: parsedQuantity,
+              unitValue: selectedInventory.rentalValue
+            }
+          ]
     }))
     setSelectedInventoryId('')
     setQuantity(1)
@@ -134,28 +221,24 @@ export default function CadastroReserva() {
   const removeItem = (inventoryId) => {
     setFormData((current) => ({
       ...current,
-      items: current.items.filter((item) => String(item.inventoryId) !== String(inventoryId))
+      items: current.items.filter((item) => item.inventoryId !== inventoryId)
     }))
   }
 
   const updateQuantity = (inventoryId, nextQuantity) => {
-    const inventory = MOCK_INVENTORY_ITEMS.find((item) => String(item.id) === String(inventoryId))
+    const inventory = inventoryItems.find((item) => item.id === inventoryId)
     const safeQuantity = Math.max(1, Math.min(Number(nextQuantity) || 1, getAvailableQuantity(inventory)))
     setFormData((current) => ({
       ...current,
       items: current.items.map((item) => (
-        String(item.inventoryId) === String(inventoryId)
-          ? { ...item, quantity: safeQuantity }
-          : item
+        item.inventoryId === inventoryId ? { ...item, quantity: safeQuantity } : item
       ))
     }))
   }
 
   const validate = () => {
     const nextErrors = {}
-    if (!formData.studentId) nextErrors.studentId = 'Selecione o aluno.'
-    if (!formData.schoolId) nextErrors.schoolId = 'A escola é obrigatória.'
-    if (!formData.classId) nextErrors.classId = 'A turma é obrigatória.'
+    if (!formData.studentId || !formData.clientId) nextErrors.studentId = 'Selecione um aluno válido.'
     if (!formData.eventDate) nextErrors.eventDate = 'Informe a data do evento.'
     if (!formData.fittingDate) nextErrors.fittingDate = 'Informe a data da prova.'
     if (!formData.deliveryDate) nextErrors.deliveryDate = 'Informe a data da entrega.'
@@ -173,10 +256,45 @@ export default function CadastroReserva() {
     return Object.keys(nextErrors).length === 0
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     if (!validate()) return
-    navigate(`/reservas?alunoId=${formData.studentId}`)
+
+    setSubmitting(true)
+    setErrorMessage('')
+    try {
+      const saved = isEdit
+        ? await atualizarReserva(id, formData)
+        : await criarReserva(formData)
+      navigate(`/reservas/${saved.id}`)
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível salvar a reserva.'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex min-h-80 items-center justify-center gap-3 p-8 text-sm text-gray-500">
+          <LoaderCircle className="animate-spin" size={20} /> Carregando reserva...
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (notFound) {
+    return (
+      <MainLayout>
+        <div className="mx-auto max-w-3xl p-4 md:p-8">
+          <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
+            <h1 className="text-2xl font-bold text-nirart-text">Reserva não encontrada</h1>
+            <Button className="mt-6" onClick={() => navigate('/reservas')}>Voltar para Reservas</Button>
+          </div>
+        </div>
+      </MainLayout>
+    )
   }
 
   return (
@@ -187,6 +305,13 @@ export default function CadastroReserva() {
           <p className="mt-1 text-sm text-gray-600">Preencha os dados do evento e selecione os itens do estoque.</p>
         </header>
 
+        {errorMessage && (
+          <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-lg border border-gray-200 bg-white p-5 md:p-6">
             <h2 className="mb-4 text-lg font-semibold text-nirart-text">Aluno e evento</h2>
@@ -194,7 +319,11 @@ export default function CadastroReserva() {
               <Field label="Aluno" error={errors.studentId}>
                 <select value={formData.studentId} onChange={(event) => handleStudentChange(event.target.value)} className={inputClass(errors.studentId)}>
                   <option value="">Selecione o aluno</option>
-                  {MOCK_STUDENTS.map((student) => <option key={student.id} value={student.id}>{student.fullName}</option>)}
+                  {students.map((student) => (
+                    <option key={student.id} value={student.id} disabled={student.status === 'Inativo' && student.id !== formData.studentId}>
+                      {student.fullName}{student.status === 'Inativo' ? ' (inativo)' : ''}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Status">
@@ -204,14 +333,14 @@ export default function CadastroReserva() {
               </Field>
               <Field label="Escola" error={errors.schoolId}>
                 <select value={formData.schoolId} disabled className={`${inputClass(errors.schoolId)} bg-gray-50`}>
-                  <option value="">Selecione o aluno</option>
-                  {MOCK_SCHOOLS.map((school) => <option key={school.id} value={school.id}>{school.fantasyName}</option>)}
+                  <option value="">Aluno avulso</option>
+                  {schools.map((school) => <option key={school.id} value={school.id}>{school.fantasyName}</option>)}
                 </select>
               </Field>
               <Field label="Turma" error={errors.classId}>
                 <select value={formData.classId} disabled className={`${inputClass(errors.classId)} bg-gray-50`}>
-                  <option value="">Selecione o aluno</option>
-                  {MOCK_CLASSES.map((studentClass) => <option key={studentClass.id} value={studentClass.id}>{studentClass.name}</option>)}
+                  <option value="">Sem turma</option>
+                  {classes.map((studentClass) => <option key={studentClass.id} value={studentClass.id}>{studentClass.name}</option>)}
                 </select>
               </Field>
             </div>
@@ -224,40 +353,11 @@ export default function CadastroReserva() {
             </div>
 
             {formData.studentId && (
-              <div className="mt-5 rounded-lg border border-green-200 bg-green-50 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-lg bg-white p-2 text-nirart-green"><Ruler size={20} /></div>
-                    <div>
-                      <p className="font-semibold text-green-900">Medidas do aluno</p>
-                      <p className="mt-1 text-sm text-green-800">
-                        {selectedMeasurement
-                          ? `Última medição ativa em ${selectedMeasurement.date}.`
-                          : 'Nenhuma medição encontrada para este aluno.'}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate(`/historico-medidas/${formData.studentId}`)}
-                    className="whitespace-nowrap"
-                  >
-                    Ver medidas
-                  </Button>
-                </div>
-                {selectedMeasurement && (
-                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {getMeasurementSummary(selectedMeasurement).map(([label, value]) => (
-                      <div key={label} className="rounded-lg bg-white p-3">
-                        <p className="text-xs text-gray-500">{label}</p>
-                        <p className="mt-1 font-semibold text-nirart-text">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <MeasurementCard
+                measurement={selectedMeasurement}
+                studentId={formData.studentId}
+                navigate={navigate}
+              />
             )}
           </section>
 
@@ -324,6 +424,7 @@ export default function CadastroReserva() {
               ) : (
                 <ReservationItemEditor
                   entries={formData.items}
+                  inventoryItems={inventoryItems}
                   onQuantityChange={updateQuantity}
                   onRemove={removeItem}
                 />
@@ -342,12 +443,48 @@ export default function CadastroReserva() {
           </section>
 
           <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
-            <Button type="button" variant="outline" onClick={() => navigate(formData.studentId ? `/reservas?alunoId=${formData.studentId}` : '/reservas')}>Cancelar</Button>
-            <Button type="submit">{isEdit ? 'Salvar Alterações' : 'Criar Reserva'}</Button>
+            <Button type="button" variant="outline" disabled={submitting} onClick={() => navigate(formData.studentId ? `/reservas?alunoId=${formData.studentId}` : '/reservas')}>Cancelar</Button>
+            <Button type="submit" disabled={submitting} className="inline-flex items-center justify-center gap-2">
+              {submitting && <LoaderCircle className="animate-spin" size={18} />}
+              {submitting ? 'Salvando...' : isEdit ? 'Salvar Alterações' : 'Criar Reserva'}
+            </Button>
           </div>
         </form>
       </div>
     </MainLayout>
+  )
+}
+
+function MeasurementCard({ measurement, studentId, navigate }) {
+  return (
+    <div className="mt-5 rounded-lg border border-green-200 bg-green-50 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-white p-2 text-nirart-green"><Ruler size={20} /></div>
+          <div>
+            <p className="font-semibold text-green-900">Medidas do aluno</p>
+            <p className="mt-1 text-sm text-green-800">
+              {measurement
+                ? `Última medição em ${formatDateBR(measurement.measurementDate)}.`
+                : 'Nenhuma medição encontrada para este aluno.'}
+            </p>
+          </div>
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={() => navigate(`/historico-medidas/${studentId}`)} className="whitespace-nowrap">
+          Ver medidas
+        </Button>
+      </div>
+      {measurement && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {getMeasurementSummary(measurement).map(([label, value]) => (
+            <div key={label} className="rounded-lg bg-white p-3">
+              <p className="text-xs text-gray-500">{label}</p>
+              <p className="mt-1 font-semibold text-nirart-text">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -369,7 +506,7 @@ function DateField({ label, field, formData, errors, updateField }) {
   )
 }
 
-function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
+function ReservationItemEditor({ entries, inventoryItems, onQuantityChange, onRemove }) {
   return (
     <>
       <div className="hidden lg:block">
@@ -386,7 +523,7 @@ function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
           </thead>
           <tbody>
             {entries.map((entry) => {
-              const item = getInventoryItem(entry.inventoryId)
+              const item = inventoryItems.find((inventory) => inventory.id === entry.inventoryId)
               return (
                 <tr key={entry.inventoryId} className="border-b last:border-0">
                   <td className="px-3 py-4">
@@ -409,10 +546,8 @@ function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
                     />
                   </td>
                   <td className="px-3 py-4 text-sm font-semibold text-nirart-text">{formatCurrency(entry.unitValue)}</td>
-                  <td className="px-3 py-4 text-sm font-semibold text-nirart-text">{formatCurrency(entry.quantity * entry.unitValue)}</td>
-                  <td className="px-2 py-4">
-                    <RemoveButton item={item} onClick={() => onRemove(entry.inventoryId)} />
-                  </td>
+                  <td className="px-3 py-4 text-sm font-semibold text-nirart-text">{formatCurrency(Number(entry.quantity) * Number(entry.unitValue))}</td>
+                  <td className="px-2 py-4"><RemoveButton item={item} onClick={() => onRemove(entry.inventoryId)} /></td>
                 </tr>
               )
             })}
@@ -422,7 +557,7 @@ function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
 
       <div className="space-y-3 p-3 lg:hidden">
         {entries.map((entry) => {
-          const item = getInventoryItem(entry.inventoryId)
+          const item = inventoryItems.find((inventory) => inventory.id === entry.inventoryId)
           return (
             <article key={entry.inventoryId} className="min-w-0 rounded-lg border border-gray-200 p-4">
               <div className="flex items-start justify-between gap-3">
@@ -440,7 +575,6 @@ function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
                 <label className="block">
                   <span className="mb-1 block text-xs text-gray-500">Quantidade</span>
                   <input
-                    aria-label={`Quantidade de ${item?.ref}`}
                     type="number"
                     min="1"
                     max={getAvailableQuantity(item)}
@@ -449,7 +583,7 @@ function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
                     className={inputClass()}
                   />
                 </label>
-                <ItemInfo label="Valor total" value={formatCurrency(entry.quantity * entry.unitValue)} />
+                <ItemInfo label="Valor total" value={formatCurrency(Number(entry.quantity) * Number(entry.unitValue))} />
               </div>
             </article>
           )
@@ -461,12 +595,7 @@ function ReservationItemEditor({ entries, onQuantityChange, onRemove }) {
 
 function RemoveButton({ item, onClick }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`Remover ${item?.ref}`}
-      className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
-    >
+    <button type="button" onClick={onClick} title={`Remover ${item?.ref || 'item'}`} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
       <Trash2 size={18} />
     </button>
   )
@@ -499,10 +628,6 @@ function getAvailableQuantity(item) {
   )
 }
 
-function getInventoryItem(inventoryId) {
-  return MOCK_INVENTORY_ITEMS.find((item) => String(item.id) === String(inventoryId))
-}
-
 function getMeasurementSummary(measurement) {
   const fields = measurement.type === 'female'
     ? [['Altura', measurement.altura], ['Busto', measurement.busto], ['Cintura', measurement.cintura], ['Calçado', measurement.shoeSize]]
@@ -510,10 +635,25 @@ function getMeasurementSummary(measurement) {
   return fields.filter(([, value]) => value)
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+function formatDateBR(value) {
+  if (!value) return '-'
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
-function capitalize(value) {
+function formatCurrency(value) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(value || 0))
+}
+
+function capitalize(value = '') {
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }

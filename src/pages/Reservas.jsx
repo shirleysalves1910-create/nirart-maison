@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
@@ -6,6 +6,7 @@ import {
   CreditCard,
   Edit2,
   Eye,
+  LoaderCircle,
   MoreHorizontal,
   PackageCheck,
   RotateCcw,
@@ -15,46 +16,71 @@ import {
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
-import { MOCK_CLASSES, MOCK_SCHOOLS, MOCK_STUDENTS } from '../data/mockData'
+import { listarAlunos } from '../services/alunos'
 import {
-  getReservationItem,
+  atualizarStatusReserva,
   getReservationItemsQuantity,
-  getReservationTotal,
-  MOCK_RESERVATIONS,
+  listarReservas,
   RESERVATION_STATUSES
-} from '../data/reservationMockData'
+} from '../services/reservas'
 
 export default function Reservas() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialStudentId = searchParams.get('alunoId') || ''
-  const [reservations, setReservations] = useState(MOCK_RESERVATIONS)
+  const [reservations, setReservations] = useState([])
+  const [students, setStudents] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [studentId, setStudentId] = useState(initialStudentId)
   const [status, setStatus] = useState('')
   const [confirmation, setConfirmation] = useState(null)
   const [mobileActionId, setMobileActionId] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
-  const filteredReservations = reservations.filter((reservation) => {
-    const student = getStudent(reservation.studentId)
-    const school = getSchool(reservation.schoolId)
-    const studentClass = getClass(reservation.classId)
+  useEffect(() => {
+    let active = true
+    const loadData = async () => {
+      setLoading(true)
+      setErrorMessage('')
+      try {
+        const [reservationData, studentData] = await Promise.all([
+          listarReservas(),
+          listarAlunos()
+        ])
+        if (!active) return
+        setReservations(reservationData)
+        setStudents(studentData)
+      } catch (error) {
+        if (active) setErrorMessage(getErrorMessage(error, 'Não foi possível carregar as reservas.'))
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadData()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const filteredReservations = useMemo(() => reservations.filter((reservation) => {
     const searchable = [
-      student?.fullName,
-      school?.fantasyName,
-      studentClass?.name,
-      ...reservation.items.map((entry) => {
-        const item = getReservationItem(entry.inventoryId)
-        return `${item?.ref} ${item?.description || item?.name}`
-      })
+      reservation.student?.fullName,
+      reservation.school?.fantasyName,
+      reservation.studentClass?.name,
+      ...reservation.items.map((entry) => (
+        `${entry.inventory?.ref || ''} ${entry.inventory?.description || entry.inventory?.name || ''}`
+      ))
     ].join(' ').toLowerCase()
 
     return (
       searchable.includes(searchTerm.toLowerCase()) &&
-      (!studentId || String(reservation.studentId) === String(studentId)) &&
+      (!studentId || reservation.studentId === studentId) &&
       (!status || reservation.status === status)
     )
-  })
+  }), [reservations, searchTerm, status, studentId])
 
   const metrics = useMemo(() => ({
     total: reservations.length,
@@ -63,11 +89,20 @@ export default function Reservas() {
     returned: reservations.filter((item) => item.status === 'devolvido').length
   }), [reservations])
 
-  const updateStatus = (reservationId, nextStatus) => {
-    setReservations((current) => current.map((reservation) => (
-      reservation.id === reservationId ? { ...reservation, status: nextStatus } : reservation
-    )))
-    setConfirmation(null)
+  const updateStatus = async (reservationId, nextStatus) => {
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      const updated = await atualizarStatusReserva(reservationId, nextStatus)
+      setReservations((current) => current.map((reservation) => (
+        reservation.id === updated.id ? updated : reservation
+      )))
+      setConfirmation(null)
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível atualizar o status da reserva.'))
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   const requestStatusChange = (reservation, nextStatus, label) => {
@@ -90,6 +125,8 @@ export default function Reservas() {
     return: (reservation) => navigate(`/registrar-devolucao/${reservation.id}`)
   }
 
+  const filteredStudent = students.find((student) => student.id === studentId)
+
   return (
     <MainLayout>
       <div className="mx-auto min-w-0 max-w-7xl space-y-6 p-4 md:p-8">
@@ -102,6 +139,13 @@ export default function Reservas() {
             Nova Reserva
           </Button>
         </header>
+
+        {errorMessage && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Metric label="Total de reservas" value={metrics.total} icon={CalendarCheck} style="bg-green-50 text-nirart-green" />
@@ -127,7 +171,7 @@ export default function Reservas() {
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             >
               <option value="">Todos os alunos</option>
-              {MOCK_STUDENTS.map((student) => <option key={student.id} value={student.id}>{student.fullName}</option>)}
+              {students.map((student) => <option key={student.id} value={student.id}>{student.fullName}</option>)}
             </select>
             <select
               value={status}
@@ -140,14 +184,18 @@ export default function Reservas() {
           </div>
           {initialStudentId && studentId && (
             <div className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-              <span>Exibindo reservas de <strong>{getStudent(studentId)?.fullName}</strong>.</span>
+              <span>Exibindo reservas de <strong>{filteredStudent?.fullName || 'aluno selecionado'}</strong>.</span>
               <button type="button" onClick={clearStudentFilter} className="font-semibold hover:underline">Limpar filtro</button>
             </div>
           )}
         </section>
 
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          {filteredReservations.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 p-12 text-sm text-gray-500">
+              <LoaderCircle className="animate-spin" size={20} /> Carregando reservas...
+            </div>
+          ) : filteredReservations.length === 0 ? (
             <div className="p-12 text-center">
               <AlertCircle className="mx-auto mb-4 text-gray-400" size={46} />
               <p className="font-medium text-gray-700">Nenhuma reserva encontrada</p>
@@ -171,6 +219,7 @@ export default function Reservas() {
       {confirmation && (
         <ConfirmationModal
           confirmation={confirmation}
+          loading={actionLoading}
           onClose={() => setConfirmation(null)}
           onConfirm={() => updateStatus(confirmation.reservation.id, confirmation.nextStatus)}
         />
@@ -208,12 +257,12 @@ function DesktopTable({ reservations, actions }) {
         <tbody>
           {reservations.map((reservation) => (
             <tr key={reservation.id} className="border-b align-top hover:bg-gray-50">
-              <td className="break-words px-3 py-4 text-sm font-semibold text-nirart-text">{getStudent(reservation.studentId)?.fullName}</td>
-              <td className="break-words px-3 py-4 text-sm text-gray-700">{getSchool(reservation.schoolId)?.fantasyName}</td>
-              <td className="break-words px-3 py-4 text-sm text-gray-700">{getClass(reservation.classId)?.name}</td>
-              <td className="px-3 py-4 text-sm text-gray-700">{formatDate(reservation.eventDate)}</td>
+              <td className="break-words px-3 py-4 text-sm font-semibold text-nirart-text">{reservation.student?.fullName || '-'}</td>
+              <td className="break-words px-3 py-4 text-sm text-gray-700">{reservation.school?.fantasyName || 'Aluno avulso'}</td>
+              <td className="break-words px-3 py-4 text-sm text-gray-700">{reservation.studentClass?.name || '-'}</td>
+              <td className="px-3 py-4 text-sm text-gray-700">{formatDateBR(reservation.eventDate)}</td>
               <td className="px-3 py-4 text-center text-sm font-semibold text-nirart-text">{getReservationItemsQuantity(reservation)}</td>
-              <td className="px-3 py-4 text-sm font-semibold text-nirart-text">{formatCurrency(getReservationTotal(reservation))}</td>
+              <td className="px-3 py-4 text-sm font-semibold text-nirart-text">{formatCurrency(reservation.totalValue)}</td>
               <td className="px-3 py-4"><StatusBadge status={reservation.status} /></td>
               <td className="px-3 py-4"><ActionList reservation={reservation} actions={actions} /></td>
             </tr>
@@ -231,15 +280,15 @@ function MobileCards({ reservations, actions, openActionId, onToggleActions, onC
         <article key={reservation.id} className="min-w-0 rounded-lg border border-gray-200 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="break-words font-semibold text-nirart-text">{getStudent(reservation.studentId)?.fullName}</p>
-              <p className="mt-1 break-words text-sm text-gray-600">{getSchool(reservation.schoolId)?.fantasyName}</p>
-              <p className="break-words text-sm text-gray-500">{getClass(reservation.classId)?.name}</p>
+              <p className="break-words font-semibold text-nirart-text">{reservation.student?.fullName || '-'}</p>
+              <p className="mt-1 break-words text-sm text-gray-600">{reservation.school?.fantasyName || 'Aluno avulso'}</p>
+              <p className="break-words text-sm text-gray-500">{reservation.studentClass?.name || '-'}</p>
             </div>
             <div className="shrink-0"><StatusBadge status={reservation.status} /></div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <Info label="Evento" value={formatDate(reservation.eventDate)} />
-            <Info label="Valor total" value={formatCurrency(getReservationTotal(reservation))} />
+            <Info label="Evento" value={formatDateBR(reservation.eventDate)} />
+            <Info label="Valor total" value={formatCurrency(reservation.totalValue)} />
             <Info label="Quantidade de itens" value={getReservationItemsQuantity(reservation)} />
             <Info label="Itens reservados" value={summarizeItems(reservation)} />
           </div>
@@ -252,11 +301,7 @@ function MobileCards({ reservations, actions, openActionId, onToggleActions, onC
               <MoreHorizontal size={18} /> Ações da reserva
             </button>
             {openActionId === reservation.id && (
-              <MobileActionMenu
-                reservation={reservation}
-                actions={actions}
-                onClose={onCloseActions}
-              />
+              <MobileActionMenu reservation={reservation} actions={actions} onClose={onCloseActions} />
             )}
           </div>
         </article>
@@ -318,17 +363,19 @@ function MobileActionMenu({ reservation, actions, onClose }) {
   )
 }
 
-function ConfirmationModal({ confirmation, onClose, onConfirm }) {
+function ConfirmationModal({ confirmation, loading, onClose, onConfirm }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
         <h2 className="text-lg font-bold text-nirart-text">Confirmar ação</h2>
         <p className="mt-3 text-gray-600">
-          Deseja {confirmation.label} a reserva de <strong>{getStudent(confirmation.reservation.studentId)?.fullName}</strong>?
+          Deseja {confirmation.label} a reserva de <strong>{confirmation.reservation.student?.fullName}</strong>?
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <Button variant="outline" onClick={onClose}>Voltar</Button>
-          <Button variant={confirmation.nextStatus === 'cancelado' ? 'secondary' : 'primary'} onClick={onConfirm}>Confirmar</Button>
+          <Button variant="outline" onClick={onClose} disabled={loading}>Voltar</Button>
+          <Button variant="secondary" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Salvando...' : 'Confirmar'}
+          </Button>
         </div>
       </div>
     </div>
@@ -345,8 +392,8 @@ function Metric({ label, value, icon: Icon, style }) {
   )
 }
 
-function Info({ label, value, className = '' }) {
-  return <div className={className}><p className="text-xs text-gray-500">{label}</p><p className="mt-1 font-semibold text-nirart-text">{value}</p></div>
+function Info({ label, value }) {
+  return <div><p className="text-xs text-gray-500">{label}</p><p className="mt-1 break-words font-semibold text-nirart-text">{value}</p></div>
 }
 
 function StatusBadge({ status }) {
@@ -358,37 +405,34 @@ function StatusBadge({ status }) {
     devolvido: 'bg-gray-100 text-gray-700',
     cancelado: 'bg-red-100 text-red-800'
   }
-  return <span className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${styles[status]}`}>{capitalize(status)}</span>
+  return <span className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${styles[status] || styles.cancelado}`}>{capitalize(status)}</span>
 }
 
 function summarizeItems(reservation) {
-  return reservation.items.map((entry) => {
-    const item = getReservationItem(entry.inventoryId)
-    return `${entry.quantity}x ${item?.ref}`
-  }).join(', ')
+  return reservation.items.map((entry) => (
+    `${entry.quantity}x ${entry.inventory?.ref || 'item'}`
+  )).join(', ')
 }
 
-function getStudent(id) {
-  return MOCK_STUDENTS.find((item) => String(item.id) === String(id))
-}
-
-function getSchool(id) {
-  return MOCK_SCHOOLS.find((item) => String(item.id) === String(id))
-}
-
-function getClass(id) {
-  return MOCK_CLASSES.find((item) => String(item.id) === String(id))
-}
-
-function formatDate(value) {
+function formatDateBR(value) {
   if (!value) return '-'
-  return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR')
+  const [year, month, day] = value.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(value || 0))
 }
 
-function capitalize(value) {
+function capitalize(value = '') {
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.message ? `${fallback} ${error.message}` : fallback
 }
