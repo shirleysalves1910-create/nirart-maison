@@ -74,6 +74,40 @@ export async function criarAluno(aluno) {
   })
 }
 
+export async function importarAlunos({ names, schoolId, classId }) {
+  const result = {
+    identified: names.length,
+    imported: 0,
+    errors: []
+  }
+
+  for (const name of names) {
+    try {
+      await criarAluno({
+        schoolId,
+        classId,
+        fullName: name,
+        sex: 'O',
+        birthDate: '',
+        phone: '',
+        address: '',
+        guardianName: '',
+        guardianPhone: '',
+        notes: 'Cadastro criado por importação de alunos.',
+        status: 'Ativo'
+      })
+      result.imported += 1
+    } catch (error) {
+      result.errors.push({
+        name,
+        message: error?.message || 'Erro desconhecido durante a importação.'
+      })
+    }
+  }
+
+  return result
+}
+
 export async function atualizarAluno(id, aluno) {
   const { data: currentStudent, error: currentError } = await supabase
     .from('alunos')
