@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertCircle, LoaderCircle } from 'lucide-react'
+import { AlertCircle, ImagePlus, LoaderCircle } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
 import {
@@ -10,6 +10,15 @@ import {
 } from '../services/alunos'
 import { listarEscolas } from '../services/escolas'
 import { listarTurmas } from '../services/turmas'
+import {
+  criarPreviewArquivo,
+  IMAGE_FILE_RULES,
+  removerArquivo,
+  removerArquivoPorUrl,
+  STORAGE_BUCKETS,
+  uploadArquivo,
+  validarArquivo
+} from '../services/storage'
 
 const EMPTY_FORM = {
   schoolId: '',
@@ -21,6 +30,7 @@ const EMPTY_FORM = {
   address: '',
   guardianName: '',
   guardianPhone: '',
+  photoUrl: '',
   notes: '',
   status: 'Ativo'
 }
@@ -38,6 +48,8 @@ export default function CadastroAluno() {
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [notFound, setNotFound] = useState(false)
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState('')
 
   useEffect(() => {
     let active = true
@@ -67,9 +79,11 @@ export default function CadastroAluno() {
             address: student.address,
             guardianName: student.guardianName,
             guardianPhone: student.guardianPhone,
+            photoUrl: student.photoUrl,
             notes: student.notes,
             status: student.status
           })
+          setPhotoPreview(student.photoUrl || '')
         }
       } catch (error) {
         if (!active) return
@@ -88,6 +102,10 @@ export default function CadastroAluno() {
       active = false
     }
   }, [id, isEdit])
+
+  useEffect(() => () => {
+    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+  }, [photoPreview])
 
   const availableClasses = useMemo(() => (
     classes.filter((classData) => classData.schoolId === formData.schoolId)
@@ -128,20 +146,63 @@ export default function CadastroAluno() {
     return Object.keys(nextErrors).length === 0
   }
 
+  const handlePhotoChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      validarArquivo(file, IMAGE_FILE_RULES)
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+      setPhotoFile(file)
+      setPhotoPreview(criarPreviewArquivo(file))
+      setErrors((current) => ({ ...current, photo: '' }))
+      setSubmitError('')
+    } catch (error) {
+      event.target.value = ''
+      setErrors((current) => ({ ...current, photo: error.message }))
+    }
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (loadError || !validateForm()) return
 
     setSubmitting(true)
     setSubmitError('')
+    let uploadedPhoto = null
     try {
+      let nextFormData = formData
+      if (photoFile) {
+        uploadedPhoto = await uploadArquivo({
+          bucket: STORAGE_BUCKETS.students,
+          file: photoFile,
+          folder: isEdit ? id : 'novos',
+          rules: IMAGE_FILE_RULES
+        })
+        nextFormData = { ...formData, photoUrl: uploadedPhoto.url }
+      }
+
       if (isEdit) {
-        await atualizarAluno(id, formData)
+        await atualizarAluno(id, nextFormData)
       } else {
-        await criarAluno(formData)
+        await criarAluno(nextFormData)
+      }
+
+      if (uploadedPhoto && formData.photoUrl) {
+        try {
+          await removerArquivoPorUrl(STORAGE_BUCKETS.students, formData.photoUrl)
+        } catch (cleanupError) {
+          console.error(cleanupError)
+        }
       }
       navigate('/alunos')
     } catch (error) {
+      if (uploadedPhoto) {
+        try {
+          await removerArquivo(uploadedPhoto.bucket, uploadedPhoto.path)
+        } catch (cleanupError) {
+          console.error(cleanupError)
+        }
+      }
       setSubmitError(getErrorMessage(
         error,
         isEdit ? 'Não foi possível atualizar o aluno.' : 'Não foi possível cadastrar o aluno.'
@@ -198,6 +259,31 @@ export default function CadastroAluno() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6">
+          <section className="grid grid-cols-1 gap-5 sm:grid-cols-[160px_1fr] sm:items-center">
+            <div className="flex h-40 w-40 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-gray-300 bg-gray-50">
+              {photoPreview ? (
+                <img src={photoPreview} alt="Pré-visualização do aluno" className="h-full w-full object-cover" />
+              ) : (
+                <div className="text-center text-gray-400">
+                  <ImagePlus className="mx-auto" size={30} />
+                  <span className="mt-2 block text-xs">Foto opcional</span>
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <label className="block text-sm font-medium text-gray-700">Foto do aluno</label>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoChange}
+                className="mt-2 block w-full min-w-0 text-sm text-gray-600 file:mr-3 file:whitespace-nowrap file:rounded-lg file:border-0 file:bg-green-50 file:px-4 file:py-2 file:font-semibold file:text-nirart-green"
+              />
+              <p className="mt-2 text-xs text-gray-500">JPG, PNG ou WEBP. Máximo de 5 MB.</p>
+              {errors.photo && <p className="mt-1 text-sm text-red-600">{errors.photo}</p>}
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Escola" error={errors.schoolId}>
               <select

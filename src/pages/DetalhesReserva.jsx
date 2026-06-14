@@ -4,12 +4,14 @@ import {
   AlertCircle,
   CalendarDays,
   CreditCard,
+  FileText,
   Edit2,
   LoaderCircle,
   PackageCheck,
   RotateCcw,
   Ruler,
   Truck,
+  Upload,
   UserRound
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
@@ -19,6 +21,22 @@ import {
   buscarReservaPorId,
   getReservationItemsQuantity
 } from '../services/reservas'
+import {
+  listarDocumentosReserva,
+  salvarDocumentoReserva
+} from '../services/documentos'
+import {
+  criarPreviewArquivo,
+  DOCUMENT_FILE_RULES,
+  validarArquivo
+} from '../services/storage'
+
+const RESERVATION_DOCUMENT_TYPES = [
+  'Contrato',
+  'Recibo',
+  'Termo de entrega',
+  'Termo de devolução'
+]
 
 export default function DetalhesReserva() {
   const { id } = useParams()
@@ -28,6 +46,11 @@ export default function DetalhesReserva() {
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [notFound, setNotFound] = useState(false)
+  const [documents, setDocuments] = useState([])
+  const [documentType, setDocumentType] = useState('Contrato')
+  const [documentFile, setDocumentFile] = useState(null)
+  const [documentPreview, setDocumentPreview] = useState('')
+  const [uploadingDocument, setUploadingDocument] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -36,7 +59,10 @@ export default function DetalhesReserva() {
       setErrorMessage('')
       try {
         const reservationData = await buscarReservaPorId(id)
-        const measurements = await listarMedidas(reservationData.studentId)
+        const [measurements, documentData] = await Promise.all([
+          listarMedidas(reservationData.studentId),
+          listarDocumentosReserva(reservationData.id)
+        ])
         if (!active) return
         setReservation(reservationData)
         setMeasurement(
@@ -44,6 +70,7 @@ export default function DetalhesReserva() {
           measurements[0] ||
           null
         )
+        setDocuments(documentData)
       } catch (error) {
         if (!active) return
         if (error?.code === 'PGRST116') {
@@ -61,6 +88,53 @@ export default function DetalhesReserva() {
       active = false
     }
   }, [id])
+
+  useEffect(() => () => {
+    if (documentPreview?.startsWith('blob:')) URL.revokeObjectURL(documentPreview)
+  }, [documentPreview])
+
+  const handleDocumentChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      validarArquivo(file, DOCUMENT_FILE_RULES)
+      if (documentPreview?.startsWith('blob:')) URL.revokeObjectURL(documentPreview)
+      setDocumentFile(file)
+      setDocumentPreview(file.type.startsWith('image/') ? criarPreviewArquivo(file) : '')
+      setErrorMessage('')
+    } catch (error) {
+      event.target.value = ''
+      setDocumentFile(null)
+      setDocumentPreview('')
+      setErrorMessage(error.message)
+    }
+  }
+
+  const uploadDocument = async () => {
+    if (!documentFile || !reservation) return
+    setUploadingDocument(true)
+    setErrorMessage('')
+    try {
+      const currentDocument = documents.find((document) => document.documentType === documentType)
+      const saved = await salvarDocumentoReserva({
+        reservationId: reservation.id,
+        documentType,
+        file: documentFile,
+        replaceDocument: currentDocument
+      })
+      setDocuments((current) => [
+        saved,
+        ...current.filter((document) => document.id !== currentDocument?.id)
+      ])
+      setDocumentFile(null)
+      if (documentPreview?.startsWith('blob:')) URL.revokeObjectURL(documentPreview)
+      setDocumentPreview('')
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível enviar o documento.'))
+    } finally {
+      setUploadingDocument(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -209,6 +283,52 @@ export default function DetalhesReserva() {
             <SectionTitle icon={PackageCheck} title="Itens reservados" />
           </div>
           <ReservationItems reservation={reservation} />
+        </section>
+
+        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+          <SectionTitle icon={FileText} title="Documentos da reserva" />
+          <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[240px_1fr]">
+            <div className="space-y-3">
+              {RESERVATION_DOCUMENT_TYPES.map((type) => {
+                const document = documents.find((entry) => entry.documentType === type)
+                return (
+                  <div key={type} className="rounded-lg border border-gray-200 p-3">
+                    <p className="text-xs text-gray-500">{type}</p>
+                    {document ? (
+                      <a href={document.fileUrl} target="_blank" rel="noreferrer" className="mt-1 block break-words text-sm font-semibold text-nirart-green hover:underline">{document.fileName}</a>
+                    ) : (
+                      <p className="mt-1 text-sm text-gray-400">Não enviado</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-[180px_1fr]">
+              <div className="flex min-h-40 items-center justify-center overflow-hidden rounded-lg border border-dashed bg-gray-50">
+                {documentPreview ? (
+                  <img src={documentPreview} alt="Pré-visualização do documento" className="h-44 w-full object-cover" />
+                ) : (
+                  <FileText className="text-gray-300" size={44} />
+                )}
+              </div>
+              <div className="min-w-0 space-y-4">
+                <FieldControl label="Tipo de documento">
+                  <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className={documentInputClass}>
+                    {RESERVATION_DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </FieldControl>
+                <FieldControl label="Arquivo">
+                  <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={handleDocumentChange} className="block w-full min-w-0 text-sm text-gray-600 file:mr-3 file:whitespace-nowrap file:rounded-lg file:border-0 file:bg-green-50 file:px-4 file:py-2 file:font-semibold file:text-nirart-green" />
+                </FieldControl>
+                <p className="text-xs text-gray-500">PDF, JPG, PNG ou WEBP. Máximo de 10 MB.</p>
+                {documentFile && <p className="break-words text-sm font-medium text-gray-700">{documentFile.name}</p>}
+                <Button type="button" disabled={!documentFile || uploadingDocument} onClick={uploadDocument} className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap sm:w-auto">
+                  {uploadingDocument ? <LoaderCircle className="animate-spin" size={17} /> : <Upload size={17} />}
+                  {uploadingDocument ? 'Enviando...' : documents.some((document) => document.documentType === documentType) ? 'Substituir documento' : 'Enviar documento'}
+                </Button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm md:p-6">
@@ -362,6 +482,10 @@ function InfoRow({ label, value, className = '' }) {
   )
 }
 
+function FieldControl({ label, children }) {
+  return <label className="block min-w-0"><span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>{children}</label>
+}
+
 function StatusBadge({ status }) {
   const styles = {
     'pré-reserva': 'bg-purple-100 text-purple-800',
@@ -437,3 +561,5 @@ function shortId(value) {
 function getErrorMessage(error, fallback) {
   return error?.message ? `${fallback} ${error.message}` : fallback
 }
+
+const documentInputClass = 'w-full min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-nirart-green focus:ring-1 focus:ring-nirart-green'

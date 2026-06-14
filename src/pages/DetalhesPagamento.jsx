@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Banknote, CalendarClock, CreditCard, Edit2, LoaderCircle, ReceiptText, UserRound, WalletCards } from 'lucide-react'
+import { Banknote, CalendarClock, CreditCard, Edit2, FileCheck2, LoaderCircle, ReceiptText, Upload, UserRound, WalletCards } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import Button from '../components/Button'
 import {
@@ -10,6 +10,15 @@ import {
   getPaymentStatus,
   getRemainingTotal
 } from '../services/pagamentos'
+import {
+  listarDocumentosReserva,
+  salvarDocumentoReserva
+} from '../services/documentos'
+import {
+  criarPreviewArquivo,
+  DOCUMENT_FILE_RULES,
+  validarArquivo
+} from '../services/storage'
 
 export default function DetalhesPagamento() {
   const { id } = useParams()
@@ -18,11 +27,21 @@ export default function DetalhesPagamento() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [documents, setDocuments] = useState([])
+  const [proofFile, setProofFile] = useState(null)
+  const [proofPreview, setProofPreview] = useState('')
+  const [uploadingProof, setUploadingProof] = useState(false)
 
   useEffect(() => {
     let active = true
     buscarPagamentoPorId(id)
-      .then((data) => { if (active) setPayment(data) })
+      .then(async (data) => {
+        const documentData = await listarDocumentosReserva(data.reservationId)
+        if (active) {
+          setPayment(data)
+          setDocuments(documentData)
+        }
+      })
       .catch((error) => {
         if (!active) return
         if (error?.code === 'PGRST116') setNotFound(true)
@@ -31,6 +50,53 @@ export default function DetalhesPagamento() {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [id])
+
+  useEffect(() => () => {
+    if (proofPreview?.startsWith('blob:')) URL.revokeObjectURL(proofPreview)
+  }, [proofPreview])
+
+  const handleProofChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      validarArquivo(file, DOCUMENT_FILE_RULES)
+      if (proofPreview?.startsWith('blob:')) URL.revokeObjectURL(proofPreview)
+      setProofFile(file)
+      setProofPreview(file.type.startsWith('image/') ? criarPreviewArquivo(file) : '')
+      setErrorMessage('')
+    } catch (error) {
+      event.target.value = ''
+      setProofFile(null)
+      setProofPreview('')
+      setErrorMessage(error.message)
+    }
+  }
+
+  const uploadProof = async () => {
+    if (!proofFile || !payment) return
+    setUploadingProof(true)
+    setErrorMessage('')
+    try {
+      const currentProof = documents.find((document) => document.documentType === 'Comprovante')
+      const saved = await salvarDocumentoReserva({
+        reservationId: payment.reservationId,
+        documentType: 'Comprovante',
+        file: proofFile,
+        replaceDocument: currentProof
+      })
+      setDocuments((current) => [
+        saved,
+        ...current.filter((document) => document.id !== currentProof?.id)
+      ])
+      setProofFile(null)
+      if (proofPreview?.startsWith('blob:')) URL.revokeObjectURL(proofPreview)
+      setProofPreview('')
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Não foi possível enviar o comprovante.'))
+    } finally {
+      setUploadingProof(false)
+    }
+  }
 
   if (loading) return <MainLayout><div className="flex min-h-80 items-center justify-center gap-3"><LoaderCircle className="animate-spin" /> Carregando pagamento...</div></MainLayout>
   if (notFound || !payment?.reservation) return <NotFound navigate={navigate} />
@@ -99,6 +165,33 @@ export default function DetalhesPagamento() {
         <section className="overflow-hidden rounded-lg border bg-white shadow-sm">
           <div className="border-b p-5 md:p-6"><SectionTitle icon={CalendarClock} title="Parcelas" /></div>
           <Installments payment={payment} navigate={navigate} />
+        </section>
+
+        <section className="rounded-lg border bg-white p-5 shadow-sm md:p-6">
+          <SectionTitle icon={FileCheck2} title="Comprovante de pagamento" />
+          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[180px_1fr]">
+            <div className="flex min-h-36 items-center justify-center overflow-hidden rounded-lg border border-dashed bg-gray-50">
+              {proofPreview ? (
+                <img src={proofPreview} alt="Pré-visualização do comprovante" className="h-40 w-full object-cover" />
+              ) : (
+                <FileCheck2 className="text-gray-300" size={42} />
+              )}
+            </div>
+            <div className="min-w-0">
+              <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={handleProofChange} className="block w-full min-w-0 text-sm text-gray-600 file:mr-3 file:whitespace-nowrap file:rounded-lg file:border-0 file:bg-green-50 file:px-4 file:py-2 file:font-semibold file:text-nirart-green" />
+              <p className="mt-2 text-xs text-gray-500">PDF, JPG, PNG ou WEBP. Máximo de 10 MB.</p>
+              {proofFile && <p className="mt-3 break-words text-sm font-medium text-gray-700">{proofFile.name}</p>}
+              <Button type="button" disabled={!proofFile || uploadingProof} onClick={uploadProof} className="mt-4 inline-flex w-full items-center justify-center gap-2 whitespace-nowrap sm:w-auto">
+                {uploadingProof ? <LoaderCircle className="animate-spin" size={17} /> : <Upload size={17} />}
+                {uploadingProof ? 'Enviando...' : documents.some((document) => document.documentType === 'Comprovante') ? 'Substituir comprovante' : 'Enviar comprovante'}
+              </Button>
+              {documents.filter((document) => document.documentType === 'Comprovante').map((document) => (
+                <a key={document.id} href={document.fileUrl} target="_blank" rel="noreferrer" className="mt-4 block break-words text-sm font-semibold text-nirart-green hover:underline">
+                  Abrir comprovante: {document.fileName}
+                </a>
+              ))}
+            </div>
+          </div>
         </section>
 
       </div>

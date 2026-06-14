@@ -218,6 +218,7 @@ function mapearAlunoParaBanco(aluno) {
     escola_id: aluno.schoolId || null,
     turma_id: aluno.classId || null,
     nome_completo: aluno.fullName.trim(),
+    foto_url: valorOpcional(aluno.photoUrl),
     sexo: aluno.sex,
     // Inputs type="date" fornecem YYYY-MM-DD; preserve a string sem timezone.
     data_nascimento: aluno.birthDate || null,

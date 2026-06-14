@@ -9,6 +9,15 @@ import {
   criarItemEstoque,
   INVENTORY_STATUS
 } from '../services/estoque'
+import {
+  criarPreviewArquivo,
+  IMAGE_FILE_RULES,
+  removerArquivo,
+  removerArquivoPorUrl,
+  STORAGE_BUCKETS,
+  uploadArquivo,
+  validarArquivo
+} from '../services/storage'
 
 const baseFields = {
   ref: '',
@@ -33,6 +42,7 @@ export default function InventoryItemForm({ config }) {
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [notFound, setNotFound] = useState(false)
+  const [photoFile, setPhotoFile] = useState(null)
 
   useEffect(() => {
     if (!isEditing) return
@@ -68,12 +78,31 @@ export default function InventoryItemForm({ config }) {
     }
   }, [config.itemType, id, isEditing])
 
+  useEffect(() => () => {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+  }, [preview])
+
   const handleChange = (event) => {
     const { name, value } = event.target
     setFormData((current) => ({ ...current, [name]: value }))
     setErrors((current) => ({ ...current, [name]: '' }))
     setErrorMessage('')
-    if (name === 'photo') setPreview(value)
+  }
+
+  const handlePhotoChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      validarArquivo(file, IMAGE_FILE_RULES)
+      if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview)
+      setPhotoFile(file)
+      setPreview(criarPreviewArquivo(file))
+      setErrors((current) => ({ ...current, photo: '' }))
+      setErrorMessage('')
+    } catch (error) {
+      event.target.value = ''
+      setErrors((current) => ({ ...current, photo: error.message }))
+    }
   }
 
   const validate = () => {
@@ -94,14 +123,41 @@ export default function InventoryItemForm({ config }) {
 
     setSubmitting(true)
     setErrorMessage('')
+    let uploadedPhoto = null
     try {
+      let nextFormData = formData
+      if (photoFile) {
+        uploadedPhoto = await uploadArquivo({
+          bucket: STORAGE_BUCKETS.inventory,
+          file: photoFile,
+          folder: isEditing ? id : config.itemType,
+          rules: IMAGE_FILE_RULES
+        })
+        nextFormData = { ...formData, photo: uploadedPhoto.url }
+      }
+
       if (isEditing) {
-        await atualizarItemEstoque(id, config.itemType, formData)
+        await atualizarItemEstoque(id, config.itemType, nextFormData)
       } else {
-        await criarItemEstoque(config.itemType, formData)
+        await criarItemEstoque(config.itemType, nextFormData)
+      }
+
+      if (uploadedPhoto && formData.photo) {
+        try {
+          await removerArquivoPorUrl(STORAGE_BUCKETS.inventory, formData.photo)
+        } catch (cleanupError) {
+          console.error(cleanupError)
+        }
       }
       navigate('/estoque')
     } catch (error) {
+      if (uploadedPhoto) {
+        try {
+          await removerArquivo(uploadedPhoto.bucket, uploadedPhoto.path)
+        } catch (cleanupError) {
+          console.error(cleanupError)
+        }
+      }
       const fallback = error?.code === '23505'
         ? 'Já existe um item com esta REF.'
         : 'Não foi possível salvar o item.'
@@ -172,18 +228,19 @@ export default function InventoryItemForm({ config }) {
                   <>
                     <ImagePlus size={32} className="text-gray-400" />
                     <span className="mt-2 text-sm font-medium text-gray-600">Foto opcional</span>
-                    <span className="mt-1 text-xs text-gray-400">Informe uma URL abaixo</span>
+                    <span className="mt-1 text-xs text-gray-400">JPG, PNG ou WEBP</span>
                   </>
                 )}
               </div>
               <input
-                type="url"
-                name="photo"
-                value={formData.photo}
-                onChange={handleChange}
-                placeholder="https://..."
-                className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-nirart-green focus:ring-1 focus:ring-nirart-green"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoChange}
+                className="mt-3 block w-full min-w-0 text-sm text-gray-600 file:mr-2 file:whitespace-nowrap file:rounded-lg file:border-0 file:bg-green-50 file:px-3 file:py-2 file:font-semibold file:text-nirart-green"
               />
+              <p className="mt-2 text-xs text-gray-500">Máximo de 5 MB.</p>
+              {errors.photo && <p className="mt-1 text-xs text-red-600">{errors.photo}</p>}
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
